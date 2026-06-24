@@ -1,158 +1,208 @@
 # codex-quota-e1002-firmware
 
-Custom Arduino/PlatformIO firmware for Seeed Studio reTerminal E1002. The device wakes every 5 minutes, fetches a small LAN JSON payload from the Mac mini `codex-quota-dashboard` service when the current page needs it, renders directly to the 800 x 480 six-color ePaper panel with Seeed_GFX, then enters deep sleep.
+这是 Seeed Studio reTerminal E1002 的自定义 Arduino/PlatformIO 固件。设备从 Mac 局域网服务获取 Codex 额度 JSON 和今日食谱 raw 图片，用 Seeed_GFX 直接绘制到 800 x 480 六色电子纸，然后进入 deep sleep。
 
-## Architecture
+固件不运行 HTML、CSS、JavaScript、iframe 或浏览器。唯一的 HTML 是设备本地 SoftAP 配网页面，用于输入 Wi-Fi 和 Mac API URL。
 
-```text
-Codex CLI
-  -> Mac codex-quota-dashboard service
-  -> LAN JSON API
-  -> E1002 Wi-Fi client
-  -> Seeed_GFX native drawing
-  -> six-color ePaper
-  -> deep sleep
+## 硬件和平台
+
+- 设备：Seeed Studio reTerminal E1002。
+- MCU：XIAO ESP32-S3 Sense 配置。
+- Framework：Arduino。
+- PlatformIO 平台：Seeed 官方 `platform-seeedboards`。
+- 屏幕驱动：Seeed_GFX。
+- 屏幕配置：`BOARD_SCREEN_COMBO 521`。
+- PSRAM：OPI PSRAM。
+- 上传速度：`115200`。
+- 串口日志：`Serial1.begin(115200, SERIAL_8N1, 44, 43)`。
+
+`platformio.ini` 已固定关键依赖：
+
+```ini
+platform = https://github.com/Seeed-Studio/platform-seeedboards.git#9e97e019ace102952d03f299a94ee8353f5a8043
+lib_deps =
+    https://github.com/Seeed-Studio/Seeed_GFX#a2de1abca0597c202193f22d01e9fa35d1ff613b
+    bblanchon/ArduinoJson@7.4.3
 ```
 
-The E1002 does not run HTML, CSS, JavaScript, iframe content, or a browser for the dashboard itself. Native JSON rendering is smaller, avoids embedded browser runtime limits, lets the ESP32-S3 control Wi-Fi lifetime, and makes deep sleep predictable.
+不要手写或猜测屏幕底层引脚、刷新协议或 ePaper 初始化流程。
 
-The only HTML in this firmware is a temporary local setup portal served by the E1002 SoftAP for entering Wi-Fi and Mac API settings.
+## 构建目标
 
-## Pages
+PlatformIO 只保留一个正式 env：
 
-Current fixed page registry:
+| Env | 功能 |
+| --- | --- |
+| `reterminal_e1002` | 根据本地 feature 配置生成当前选择的固件 |
 
-| Slot | PageId | Policy | Description |
-| --- | --- | --- | --- |
-| 1 | `CodexQuota` | `PeriodicData` | Codex quota dashboard from the Mac JSON API. |
-| 2 | `TodayMeal` | `Static` | Meal image page. It fetches one 800 x 480 raw image from the Mac service for the current internal meal slot. |
+模块选择由 ignored 的 `.local/features.env` 或同名环境变量决定。当前可选模块：
 
-Every page shows a dynamic page indicator in the bottom-right corner:
+| Feature | `0` | `1` |
+| --- | --- | --- |
+| `FEATURE_MEAL` | 只包含 Codex 额度页 | Codex 额度页 + 今日食谱页 |
 
-```text
-P1/2
-P2/2
-```
+默认 `FEATURE_MEAL=1`。
 
-The first number is the current page slot and the second number is the registered page count. If the registry grows to 6 pages, the same code will format `P1/6`, `P2/6`, and so on.
-
-## Built-in Buttons
-
-The three built-in physical buttons are active LOW and can wake the ESP32-S3 from deep sleep:
-
-| Physical button | Seeed name | GPIO | Action |
-| --- | --- | --- | --- |
-| Right green | KEY0 | GPIO3 | Refresh current page. |
-| Middle | KEY1 | GPIO4 | Next page, looping after the last page. |
-| Left | KEY2 | GPIO5 | Press N times to go directly to page N. |
-
-Left-button direct page selection uses a `1400 ms` multi-click window and `40 ms` debounce. The first press that wakes the device from deep sleep is counted as click 1. The wider window accounts for ESP32-S3 deep-sleep wake latency. With the current two-page registry:
-
-```text
-Left x1 -> Page 1
-Left x2 -> Page 2
-Left x3 -> invalid, keep the current page
-```
-
-The bottom footer uses:
-
-```text
-LEFT:N=PAGE    MID:NEXT    GREEN:REFRESH    BAT xx%    Pn/total
-```
-
-`BAT xx%` is read locally from the E1002 battery monitor. The firmware enables the battery measurement circuit on `GPIO21`, samples the battery ADC on `GPIO1`, applies the board voltage-divider compensation, and maps voltage to percent with the Seeed reTerminal E Series calibration curve. If the reading is outside the plausible range, the footer shows `BAT --%`.
-
-Hardware reference: https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome_advanced/
-
-## Refresh Policies
-
-`PeriodicData` pages may connect to Wi-Fi. The Codex page uses this policy and fetches the Mac JSON API on timer wake, page switch, cold boot, and green-button refresh.
-
-`Static` pages do not connect to Wi-Fi for timer wake. The current Meal page uses this policy. Timer wake while parked on Page 2 returns to sleep without a full ePaper refresh. Green-button refresh on Page 2 redraws the same static placeholder without calling the quota API.
-
-Page switches always require a full ePaper refresh because the panel is still showing the previous page. Direct-left navigation to the page already being shown does not refresh.
-
-## Mac Device API
-
-The firmware calls:
-
-```text
-GET http://<Mac-IP>:19527/api/device/<deviceToken>
-```
-
-Response schema:
-
-```json
-{
-  "schemaVersion": 1,
-  "generatedAt": 1780000000,
-  "plan": "PRO",
-  "status": "fresh",
-  "windows": [
-    {
-      "key": "five_hour",
-      "title": "5 HOUR",
-      "remainingPercent": 73,
-      "resetsAt": 1780003600,
-      "resetText": "Jun 23 21:40"
-    }
-  ]
-}
-```
-
-The endpoint uses an independent device token, sends `Cache-Control: no-store`, and does not return email, account ID, OAuth token, cookies, or raw RPC data. The Mac formats `resetText`; the E1002 does not do timezone conversion.
-
-## Install PlatformIO
+## 交互式选择
 
 ```bash
-brew install platformio
-pio --version
+cd firmware/e1002
+scripts/install.sh
 ```
 
-## Wi-Fi Setup Portal
+脚本会显示模块列表：
 
-The firmware stores Wi-Fi and API settings in ESP32 NVS. If no usable settings exist, or the first Wi-Fi connection fails before any valid page has been rendered, the device starts a local setup portal.
+```text
+[x] Codex quota dashboard
+[x] Wi-Fi setup portal
+[x] Deep sleep and three-button navigation
+[ ] Daily meal page
+```
 
-Manual setup portal entry from deep sleep:
+用空格切换 `Daily meal page`，Enter 确认。脚本最后可以选择：
 
-1. Hold the left button `KEY2 / GPIO5` for about 1.2 seconds.
-2. Release the left button after the `WIFI SETUP` page appears.
-3. Connect a computer or phone to:
+- 只保存选择。
+- 构建固件。
+- 构建并烧录固件。
+
+选择会写入本地 ignored 文件：
+
+```text
+.local/features.env
+```
+
+`scripts/build.sh` 和 `scripts/flash.sh` 会自动读取这个文件。
+
+## 构建和测试
+
+```bash
+test/run_host_tests.sh
+scripts/build.sh
+```
+
+`test/run_host_tests.sh` 运行不依赖硬件的 C++ host tests。
+
+也可以直接临时覆盖 feature：
+
+```bash
+FEATURE_MEAL=0 scripts/build.sh
+FEATURE_MEAL=1 scripts/build.sh
+```
+
+## 烧录和串口
+
+```bash
+scripts/flash.sh
+scripts/monitor.sh
+```
+
+脚本会自动探测唯一的 USB 串口。如果没有串口或存在多个候选串口，脚本会停止，不会猜测。
+
+调试时建议：
+
+- 使用 USB-C 数据线。
+- E1002 电源开关保持 ON。
+- 先拔掉 MicroSD 卡。
+- 上传失败时先确认 115200 baud，并按 RESET 或绿色键唤醒设备。
+- 不改开发板型号、不改屏幕引脚、不随便 erase flash。
+
+## 页面
+
+当前页面注册表由 `FEATURE_MEAL` 决定，但 PlatformIO env 始终是 `reterminal_e1002`：
+
+| Slot | PageId | RefreshPolicy | 内容 |
+| --- | --- | --- | --- |
+| 1 | `CodexQuota` | `PeriodicData` | Codex 额度、套餐、token 用量和电量 |
+| 2 | `TodayMeal` | `PeriodicData` | 今日食谱 raw 图片，仅在 `FEATURE_MEAL=1` 时注册 |
+
+所有页面右下角显示 `P1/2`、`P2/2` 或 `P1/1` 形式的页码。页码由 `PageManager` 根据页面注册表生成，不在页面里硬编码。
+
+Page 1 显示：
+
+- 套餐类型。
+- 5 小时额度。
+- 周额度。
+- `TOTAL` 总 token 用量。
+- `TODAY` 今日 token 用量。
+- 电池电量。
+
+启用每日食谱时，Page 2 显示：
+
+- Mac 服务生成的 800 x 480 食谱图片。
+- 当前内部食谱页，例如 `M1/4`。
+- 电池电量和页码。
+
+关闭每日食谱时：
+
+- 页面注册表只有 Page 1。
+- 页码显示 `P1/1`。
+- 左键连按 2 次会判定为无效页码。
+- 中键短按或长按都不会切到食谱页。
+- 固件不会请求 `/meal/today` 或 `/meal/today.raw`。
+
+## 按键
+
+三颗内置按键均为 active LOW，并作为 EXT1 deep-sleep wake source。
+
+| 物理按键 | Seeed 名称 | GPIO | 行为 |
+| --- | --- | --- | --- |
+| 右侧绿色键 | KEY0 | GPIO3 | 刷新当前页 |
+| 中键 | KEY1 | GPIO4 | 短按切换下一大页；启用食谱时长按切换当前食谱内部页 |
+| 左键 | KEY2 | GPIO5 | 连按 N 次直达第 N 页；长按约 1.2 秒进入配网 |
+
+参数：
+
+- 消抖：`40 ms`。
+- 中键长按：`900 ms`，到时间即触发，不需要等松手；关闭食谱模块时退化为普通下一页动作。
+- 左键多击间隔：`1400 ms`。
+- 左键多击总超时：`6000 ms`。
+- 进入配网长按：约 `1200 ms`。
+
+左键示例：
+
+```text
+FEATURE_MEAL=0:
+  左键 1 次 -> Page 1
+  左键 2 次 -> 无效，保持原页
+
+FEATURE_MEAL=1:
+  左键 1 次 -> Page 1
+  左键 2 次 -> Page 2
+  左键 3 次 -> 当前只有两页，判定无效并保持原页
+```
+
+## 配网
+
+推荐使用设备本地配网页面，而不是把 Wi-Fi 和 API URL 固定写进固件。
+
+从 deep sleep 进入配网：
+
+1. 长按左键 `KEY2 / GPIO5` 约 1.2 秒。
+2. 屏幕出现 `WIFI SETUP` 后松手。
+3. 连接 Wi-Fi：
 
 ```text
 SSID: Codex-E1002-Setup
 Password: codex-e1002
 ```
 
-Open:
+4. 打开：
 
 ```text
 http://192.168.4.1
 ```
 
-If the device is not sleeping, hold the left button and press `RESET`, then keep holding left until the `WIFI SETUP` page appears.
+5. 输入 2.4GHz Wi-Fi、Wi-Fi 密码和 Mac 设备 API URL。
 
-The page lets you enter:
+如果设备没有睡眠，可以按住左键再按 RESET，继续按住左键直到 `WIFI SETUP` 出现。
 
-- 2.4GHz Wi-Fi SSID.
-- Wi-Fi password.
-- Mac device API URL, for example `http://192.168.x.x:19527/api/device/...`.
+配网页面不会预填完整受保护 URL。如果已经存过 API URL，页面只显示当前 host 和 port；API URL 输入框留空表示保留旧值。
 
-The full API URL is never pre-filled into the HTML page. If the device already has a stored API URL, the page shows only the current host and port; leave the API URL field blank to keep the existing target. After saving, the device reboots and uses the saved NVS settings.
+## 可选 secrets.h
 
-The setup portal is local to the E1002 AP. It is not a cloud service and does not expose the dashboard publicly. Do not use the setup portal on an untrusted public radio environment because the form is local HTTP.
+`include/secrets.h` 是可选 bootstrap 文件，适合开发或首次烧录时使用。正式使用推荐走配网页面。
 
-## Optional Bootstrap Secrets
-
-`include/secrets.h` is now optional. It can be used as a local bootstrap fallback while developing, but production setup should use the portal above.
-
-Copy the example only if you want local compile-time defaults:
-
-```bash
-cp include/secrets.example.h include/secrets.h
-```
-
-`include/secrets.h` may contain:
+示例：
 
 ```cpp
 #pragma once
@@ -162,108 +212,128 @@ cp include/secrets.example.h include/secrets.h
 #define QUOTA_API_URL ""
 ```
 
-Do not commit `include/secrets.h`. The firmware logs only the API host and port, not the full URL or token. It never prints the Wi-Fi password.
+`include/secrets.h` 已被 `.gitignore` 忽略，不能提交。固件日志不会打印 Wi-Fi 密码、device token 或完整受保护 URL。
 
-The E1002 needs 2.4 GHz Wi-Fi. If the SSID is 5 GHz only, guest-only, or isolated from the Mac, the device will not reach the API.
+## Mac API
 
-## Build
+额度页请求：
 
-```bash
-scripts/build.sh
+```text
+GET http://<Mac-IP>:19527/api/device/<deviceToken>
 ```
 
-Host-only logic tests:
+食谱页请求：
 
-```bash
-test/run_host_tests.sh
+```text
+GET http://<Mac-IP>:19527/api/device/<deviceToken>/meal/today?slot=N
+GET http://<Mac-IP>:19527/api/device/<deviceToken>/meal/today.raw?slot=N
 ```
 
-## Flash
+这些请求只会在 `FEATURE_MEAL=1` 且当前页面是 `TodayMeal` 时发生。
 
-Use a USB-C data cable, set the E1002 power switch to ON, and remove the MicroSD card while debugging.
+`meal/today.raw` 必须返回：
 
-```bash
-scripts/flash.sh
-```
+- `Content-Type: application/vnd.codex.e1002-4bpp`
+- 800 x 480
+- 4bpp
+- 192000 bytes
 
-The script auto-detects one USB serial port. If multiple ports are present it stops and prints the list. Upload speed is fixed at 115200 baud. If upload fails, first confirm 115200 baud, wake the device with RESET or the green button, and avoid changing the board model or display pins.
+固件只把 API host 和 port 写入日志，不打印完整 URL。
 
-## Serial Log
+## 刷新策略
 
-```bash
-scripts/monitor.sh
-```
+每次唤醒的主流程都在 `setup()` 中完成，`loop()` 为空。
 
-Serial runs at 115200 baud over the reTerminal carrier UART:
+会触发联网的情况：
 
-```cpp
-Serial1.begin(115200, SERIAL_8N1, 44, 43);
-```
+- 冷启动。
+- 5 分钟 timer wake，当前页需要数据。
+- 页面切换到需要数据的页。
+- 绿色键手动刷新。
+- 中键长按切换食谱内部页，仅限 `FEATURE_MEAL=1`。
 
-Logs include firmware version, wake reason, setup source, Wi-Fi result, Mac API host and port, HTTP status, schemaVersion, quota percentages, refresh decision, deep sleep entry, and next wake interval.
+会触发完整刷新的情况：
 
-## Manual Refresh
+- 冷启动。
+- 页面切换。
+- 绿色键手动刷新。
+- 食谱内部页切换。
+- 页面显示 hash 变化。
+- 连续约 12 个周期后的一小时强制刷新。
 
-The right-side green button is GPIO3 / KEY0, active LOW. It is configured as an EXT1 deep-sleep wake source. Button wake forces a screen refresh even when the display hash has not changed. On Page 1 it fetches the Mac API before drawing. On Page 2 it redraws the static placeholder and does not connect to Wi-Fi.
+页面 hash 包含 PageId、页码、显示内容、电池显示值和食谱图片 hash；不把 `generatedAt` 作为额度页强制刷新依据。
 
 ## Deep Sleep
 
-After each cycle the firmware:
+每个工作周期结束前，固件会：
 
-1. Disconnects HTTP and Wi-Fi.
-2. Waits for KEY0, KEY1, and KEY2 to be released.
-3. Enables 5 minute timer wake.
-4. Enables GPIO3, GPIO4, and GPIO5 active LOW wake with EXT1 `ANY_LOW`.
-5. Starts deep sleep.
+1. 关闭 HTTP 和 Wi-Fi。
+2. 等待三颗按键释放。
+3. 配置 5 分钟 timer wake。
+4. 配置 GPIO3、GPIO4、GPIO5 的 EXT1 `ANY_LOW` 唤醒。
+5. 配置 RTC pull-up 并禁用 pulldown。
+6. 进入 deep sleep。
 
-If a button remains LOW for the release timeout, the firmware logs a warning and uses timer-only sleep for that cycle to avoid repeated immediate wakeups.
+如果某个按键持续 LOW，固件会记录警告，本周期退化为 timer-only sleep，避免立即反复唤醒。
 
-The ePaper keeps the last image without power. If network/API fails after a valid page was displayed, the firmware keeps the old image and sleeps again. If no valid page has ever been displayed, it renders one `SETUP ERROR` page without showing tokens or protected URLs.
+电子纸断电后保留画面。网络或 API 失败时：
 
-If no usable Wi-Fi/API settings exist, or first Wi-Fi connection fails before any valid page exists, the firmware renders the `WIFI SETUP` page and starts the setup portal instead of repeatedly sleeping with a blank configuration.
+- 已显示过有效当前页：保留旧画面并睡眠。
+- 没有任何有效画面：显示 `SETUP ERROR` 或进入本地配网。
+- 食谱图片失败：显示简洁错误页或保留已有食谱画面。
 
-## Adding Page 3
+## 电池显示
 
-Add the renderer and static page payload hash, then add one entry to the page registry in `src/page_manager.cpp`:
+页脚显示：
 
-```cpp
-static constexpr PageDescriptor kPages[] = {
-  {PageId::CodexQuota, 1, "CodexQuota", RefreshPolicy::PeriodicData},
-  {PageId::TodayMeal, 2, "TodayMeal", RefreshPolicy::Static},
-  {PageId::ThirdPage, 3, "ThirdPage", RefreshPolicy::Static},
-};
+```text
+BAT xx%
 ```
 
-Then extend `PageId`, `pageIdName()`, `mealPlaceholderHash()` or the new page hash helper, and `PageManager::renderCurrentPage()`. Do not modify `InputManager` for the new page; left-button N-click direct navigation and middle-button next-page looping use the registry count.
+固件通过 `GPIO21` 启用测量电路，通过 `GPIO1` 读取 ADC，按 reTerminal E Series 的电压曲线映射百分比。读数异常时显示：
 
-Page modules should render only their page content and should not read buttons, connect Wi-Fi, mutate page selection, or enter deep sleep.
+```text
+BAT --%
+```
 
-Next stage plan: replace the Page 2 placeholder renderer with a "read today's meal image from SD cache" renderer. This firmware version does not implement SD access.
+## 新增页面
 
-## LAN Checks
+新增第 3 页的最小步骤：
 
-The Mac IP should be stable. Set a DHCP Reservation for the Mac mini, or update the stored API URL through the setup portal whenever the Mac IP changes.
+1. 在 `PageId` 中加入新枚举。
+2. 在 `src/page_manager.cpp` 的 `kPages` 注册表中加入一项。
+3. 实现该页 payload hash 和渲染逻辑。
+4. 在 `PageManager::renderCurrentPage()` 中分发渲染。
 
-From a phone on the same Wi-Fi, open:
+不需要修改 `InputManager`。左键 N 连击和中键下一页会自动使用页面注册表数量。
+
+页面模块不应直接：
+
+- 读取按键。
+- 连接 Wi-Fi。
+- 修改当前页面。
+- 进入 deep sleep。
+
+## 局域网检查
+
+Mac IP 建议在路由器中设置 DHCP Reservation。若 Mac IP 改变，需要通过配网页面更新设备 API URL。
+
+从手机验证：
 
 ```text
 http://<Mac-IP>:19527/api/device/<deviceToken>
 ```
 
-Expected result is JSON, not HTML. If it fails, check AP Isolation, Guest Wi-Fi, VLAN/firewall rules, macOS firewall prompts for Node, and whether E1002 and Mac are on the same reachable LAN.
+手机、E1002 和 Mac 需要在互相可达的局域网内。Guest Wi-Fi、AP Isolation、VLAN 防火墙和 macOS 防火墙都可能阻止访问。
 
-## Why Remove MicroSD While Debugging
+## 恢复官方 SenseCraft HMI
 
-The reTerminal E series examples share hardware resources between ePaper and SD. This firmware does not use SD. Removing the card keeps first bring-up focused on USB upload, UART logging, Wi-Fi, and display refresh.
+若要恢复官方 SenseCraft HMI：
 
-## Restore SenseCraft HMI
+1. 下载 Seeed 官方 reTerminal E1002 / SenseCraft HMI 固件包。
+2. 按 Seeed 文档进入官方刷机模式。
+3. 使用官方恢复工具或文档中的 `esptool` 命令刷回官方固件。
+4. 重启 E1002。
+5. 重新部署 SenseCraft HMI 页面。
 
-To restore the official SenseCraft HMI flow:
-
-1. Download the official Seeed reTerminal E1002/SenseCraft HMI firmware package from Seeed's documentation.
-2. Put the device in the official flashing mode described by Seeed.
-3. Flash the factory firmware with Seeed's recovery tool or documented `esptool` command.
-4. Reboot the E1002.
-5. Deploy a SenseCraft HMI page again.
-
-Restoring SenseCraft does not require deleting the Mac dashboard service, but this custom firmware only needs the JSON and image APIs.
+恢复官方固件不需要删除 Mac 服务；只是这套自定义固件只依赖 JSON 和图片 API。

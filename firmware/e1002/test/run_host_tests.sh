@@ -9,21 +9,42 @@ if [[ ! -d "$ARDUINOJSON_DIR" ]]; then
   exit 1
 fi
 
-c++ -std=c++17 \
-  -DQUOTA_HOST_TEST \
-  -I src \
-  -I include \
-  -I "$ARDUINOJSON_DIR" \
-  src/battery.cpp \
-  src/input_manager.cpp \
-  src/meal_image_client.cpp \
-  src/page_manager.cpp \
-  src/provisioning.cpp \
-  src/quota_client.cpp \
-  test/firmware_logic_tests.cpp \
-  -o /tmp/codex-quota-e1002-firmware-tests
+compiler="${CXX:-c++}"
 
-/tmp/codex-quota-e1002-firmware-tests
+bash -n scripts/build.sh scripts/flash.sh scripts/install.sh scripts/monitor.sh scripts/check-secrets.sh
+python3 -m py_compile scripts/apply_features.py scripts/feature_config.py
+
+run_tests() {
+  local feature_meal="$1"
+  local output="/tmp/codex-quota-e1002-firmware-tests-meal-${feature_meal}"
+  local sources=(
+    src/battery.cpp
+    src/input_manager.cpp
+    src/page_manager.cpp
+    src/provisioning.cpp
+    src/quota_client.cpp
+  )
+  if [[ "$feature_meal" == "1" ]]; then
+    sources+=(src/meal_image_client.cpp)
+  fi
+
+  "$compiler" -std=c++17 \
+    -DQUOTA_HOST_TEST \
+    -DFEATURE_MEAL="$feature_meal" \
+    -I src \
+    -I include \
+    -I "$ARDUINOJSON_DIR" \
+    "${sources[@]}" \
+    test/firmware_logic_tests.cpp \
+    -o "$output"
+
+  "$output"
+}
+
+run_tests 1
+run_tests 0
+
+echo "firmware logic tests passed for FEATURE_MEAL=1 and FEATURE_MEAL=0"
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if git ls-files --error-unmatch include/secrets.h >/dev/null 2>&1; then

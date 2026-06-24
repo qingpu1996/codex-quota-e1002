@@ -3,8 +3,11 @@
 #include <string.h>
 
 #include "battery.h"
+#include "feature_flags.h"
 #include "input_manager.h"
+#if FEATURE_MEAL
 #include "meal_image_client.h"
+#endif
 #include "page_manager.h"
 #include "provisioning.h"
 #include "quota_client.h"
@@ -164,20 +167,33 @@ static void test_twelve_cycles_force_refresh() {
   assert(decision.shouldRefresh);
 }
 
-static void test_page_count_returns_two() {
+static void test_page_count_matches_features() {
   PageManager pages;
+#if FEATURE_MEAL
   assert(pages.pageCount() == 2);
+#else
+  assert(pages.pageCount() == 1);
+#endif
 }
 
-static void test_page_one_next_is_page_two() {
+static void test_page_one_next_respects_registry() {
   PageManager pages(1);
   assert(pages.nextPage());
+#if FEATURE_MEAL
   assert(pages.currentSlot() == 2);
   assert(pages.currentPage().id == PageId::TodayMeal);
+#else
+  assert(pages.currentSlot() == 1);
+  assert(pages.currentPage().id == PageId::CodexQuota);
+#endif
 }
 
-static void test_page_two_next_wraps_to_page_one() {
+static void test_last_page_next_wraps_to_page_one() {
+#if FEATURE_MEAL
   PageManager pages(2);
+#else
+  PageManager pages(1);
+#endif
   assert(pages.nextPage());
   assert(pages.currentSlot() == 1);
   assert(pages.currentPage().id == PageId::CodexQuota);
@@ -190,13 +206,19 @@ static void test_direct_click_one_goes_page_one() {
 }
 
 static void test_direct_click_two_goes_page_two() {
-  InputAction action = directPageActionFromClickCount(2, 2);
+#if FEATURE_MEAL
+  InputAction action = directPageActionFromClickCount(2, static_cast<uint8_t>(PageManager::registryCount()));
   assert(action.type == InputActionType::GoToPage);
   assert(action.targetPageSlot == 2);
+#else
+  InputAction action = directPageActionFromClickCount(2, static_cast<uint8_t>(PageManager::registryCount()));
+  assert(action.type == InputActionType::None);
+  assert(action.clickCount == 2);
+#endif
 }
 
 static void test_direct_click_three_invalid_with_two_pages() {
-  InputAction action = directPageActionFromClickCount(3, 2);
+  InputAction action = directPageActionFromClickCount(3, static_cast<uint8_t>(PageManager::registryCount()));
   assert(action.type == InputActionType::None);
   assert(action.clickCount == 3);
 }
@@ -214,26 +236,47 @@ static void test_middle_action_advances_one_page() {
   InputAction action = actionFromWakeMask(1ULL << PIN_KEY1_MIDDLE);
   assert(action.type == InputActionType::NextPage);
   assert(pages.nextPage());
+#if FEATURE_MEAL
   assert(pages.currentSlot() == 2);
+#else
+  assert(pages.currentSlot() == 1);
+#endif
 }
 
-static void test_middle_long_press_is_next_subpage() {
+static void test_middle_long_press_matches_meal_feature() {
   InputAction shortPress = middleButtonActionFromHoldDuration(BUTTON_LONG_PRESS_MS - 1);
   InputAction longPress = middleButtonActionFromHoldDuration(BUTTON_LONG_PRESS_MS);
   assert(shortPress.type == InputActionType::NextPage);
+#if FEATURE_MEAL
   assert(longPress.type == InputActionType::NextSubPage);
+#else
+  assert(longPress.type == InputActionType::NextPage);
+#endif
 }
 
 static void test_green_action_does_not_change_page() {
+#if FEATURE_MEAL
   PageManager pages(2);
+#else
+  PageManager pages(1);
+#endif
   InputAction action = actionFromWakeMask(1ULL << PIN_KEY0_GREEN);
   assert(action.type == InputActionType::RefreshCurrentPage);
+#if FEATURE_MEAL
   assert(pages.currentSlot() == 2);
+#else
+  assert(pages.currentSlot() == 1);
+#endif
 }
 
 static void test_timer_wake_does_not_change_page() {
+#if FEATURE_MEAL
   PageManager pages(2);
   assert(pages.currentSlot() == 2);
+#else
+  PageManager pages(1);
+  assert(pages.currentSlot() == 1);
+#endif
 }
 
 static void test_left_wake_press_counts_as_first_click() {
@@ -284,12 +327,16 @@ static void test_multiple_wake_bits_is_ambiguous() {
 
 static void test_page_indicator_formats() {
   PageManager pageOne(1);
-  PageManager pageTwo(2);
   char value[12];
   pageOne.formatPageIndicator(value, sizeof(value));
+#if FEATURE_MEAL
   assert(strcmp(value, "P1/2") == 0);
+  PageManager pageTwo(2);
   pageTwo.formatPageIndicator(value, sizeof(value));
   assert(strcmp(value, "P2/2") == 0);
+#else
+  assert(strcmp(value, "P1/1") == 0);
+#endif
 }
 
 static void test_hash_includes_page_id() {
@@ -300,19 +347,35 @@ static void test_hash_includes_page_id() {
 
 static void test_page_one_and_two_hash_differ_with_same_content() {
   PageManager pages(1);
+#if FEATURE_MEAL
   assert(pages.pageContentHash(1, 777, "P1/2") != pages.pageContentHash(2, 777, "P1/2"));
+#else
+  assert(!pages.isValidSlot(2));
+  assert(pages.pageContentHash(1, 777, "P1/1") != pageDisplayHash(PageId::TodayMeal, 777, "P1/1"));
+#endif
 }
 
-static void test_static_page_timer_does_not_require_network_policy() {
+static void test_page_registry_feature_policy() {
+#if FEATURE_MEAL
   PageManager pages(2);
   assert(pages.currentPage().refreshPolicy == RefreshPolicy::PeriodicData);
+#else
+  PageManager pages(1);
+  assert(pages.pageCount() == 1);
+  assert(!pages.isValidSlot(2));
+  assert(pages.currentPage().refreshPolicy == RefreshPolicy::PeriodicData);
+#endif
 }
 
 static void test_page_switch_requires_refresh_by_page_change() {
   PageManager pages(1);
   const uint8_t before = pages.currentSlot();
   pages.nextPage();
+#if FEATURE_MEAL
   assert(pages.currentSlot() != before);
+#else
+  assert(pages.currentSlot() == before);
+#endif
 }
 
 static void test_provisioning_accepts_valid_fields() {
@@ -405,6 +468,7 @@ static void test_battery_hash_uses_displayed_label() {
   assert(batteryRenderHash(a) != batteryRenderHash(c));
 }
 
+#if FEATURE_MEAL
 static void test_meal_endpoint_url_builder() {
   char url[288];
   assert(buildMealEndpointUrl("http://192.0.2.10:19527/api/device/example-device-token", "meal/today", url, sizeof(url)));
@@ -466,6 +530,7 @@ static void test_meal_meta_hash_uses_image_hash_not_generated_at() {
   assert(mealImageMetaHash(ma) == mealImageMetaHash(mb));
   assert(mealImageMetaHash(ma) != mealImageMetaHash(mc));
 }
+#endif
 
 int main() {
   test_normal_json();
@@ -482,15 +547,15 @@ int main() {
   test_network_failure_existing_valid_no_error_refresh();
   test_manual_wake_forces_refresh();
   test_twelve_cycles_force_refresh();
-  test_page_count_returns_two();
-  test_page_one_next_is_page_two();
-  test_page_two_next_wraps_to_page_one();
+  test_page_count_matches_features();
+  test_page_one_next_respects_registry();
+  test_last_page_next_wraps_to_page_one();
   test_direct_click_one_goes_page_one();
   test_direct_click_two_goes_page_two();
   test_direct_click_three_invalid_with_two_pages();
   test_direct_current_page_has_no_page_change();
   test_middle_action_advances_one_page();
-  test_middle_long_press_is_next_subpage();
+  test_middle_long_press_matches_meal_feature();
   test_green_action_does_not_change_page();
   test_timer_wake_does_not_change_page();
   test_left_wake_press_counts_as_first_click();
@@ -501,7 +566,7 @@ int main() {
   test_page_indicator_formats();
   test_hash_includes_page_id();
   test_page_one_and_two_hash_differ_with_same_content();
-  test_static_page_timer_does_not_require_network_policy();
+  test_page_registry_feature_policy();
   test_page_switch_requires_refresh_by_page_change();
   test_provisioning_accepts_valid_fields();
   test_provisioning_rejects_missing_ssid();
@@ -515,10 +580,12 @@ int main() {
   test_battery_percent_interpolates();
   test_battery_label_formats();
   test_battery_hash_uses_displayed_label();
+#if FEATURE_MEAL
   test_meal_endpoint_url_builder();
   test_meal_meta_parses_valid_json();
   test_meal_meta_rejects_bad_shape();
   test_meal_meta_hash_uses_image_hash_not_generated_at();
+#endif
   puts("firmware logic tests passed");
   return 0;
 }

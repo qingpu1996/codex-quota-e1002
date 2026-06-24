@@ -2,7 +2,10 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include "feature_flags.h"
+#if FEATURE_MEAL
 #include "meal_image_client.h"
+#endif
 #include "TFT_eSPI.h"
 
 #ifndef EPAPER_ENABLE
@@ -78,8 +81,12 @@ static void drawFooter(const char* pageIndicator, const char* subPageIndicator, 
   epaper.drawLine(20, 416, 780, 416, TFT_BLACK);
   text("L:N=PAGE", 34, 432, 2, TFT_BLACK);
   text("M:NEXT", 170, 432, 2, TFT_BLACK);
+#if FEATURE_MEAL
   text("HOLD:SUB", 280, 432, 2, TFT_BLACK);
   text("G:REFRESH", 420, 432, 2, TFT_BLACK);
+#else
+  text("G:REFRESH", 300, 432, 2, TFT_BLACK);
+#endif
   if (subPageIndicator && subPageIndicator[0] != '\0') {
     text(subPageIndicator, 596, 432, 2, TFT_BLACK, TR_DATUM);
   }
@@ -138,6 +145,7 @@ void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator, con
   epaper.sleep();
 }
 
+#if FEATURE_MEAL
 void renderTodayMealPage(const char* pageIndicator, const BatteryStatus& battery) {
   epaper.begin();
   epaper.fillScreen(TFT_WHITE);
@@ -204,6 +212,7 @@ void renderMealErrorPage(const char* category, const char* pageIndicator, const 
   Serial1.printf("[display] meal error update done in %lu ms\n", static_cast<unsigned long>(millis() - start));
   epaper.sleep();
 }
+#endif
 
 void renderSetupError(const char* category) {
   epaper.begin();

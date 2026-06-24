@@ -5,8 +5,11 @@
 
 #include "battery.h"
 #include "display.h"
+#include "feature_flags.h"
 #include "input_manager.h"
+#if FEATURE_MEAL
 #include "meal_image_client.h"
+#endif
 #include "page_manager.h"
 #include "power.h"
 #include "provisioning.h"
@@ -87,6 +90,7 @@ static void logPayloadSummary(const QuotaPayload& payload) {
   }
 }
 
+#if FEATURE_MEAL
 static void logMealSummary(const MealImageMeta& meta) {
   Serial1.printf("[meal] date      : %s %s\n", meta.date, meta.weekday);
   Serial1.printf("[meal] slot      : M%u/%u title=%s\n",
@@ -97,6 +101,7 @@ static void logMealSummary(const MealImageMeta& meta) {
                  static_cast<unsigned>(meta.rawBytes),
                  meta.imageHash);
 }
+#endif
 
 static uint32_t mixHash(uint32_t hash, uint32_t value) {
   return hash ^ (value + 0x9e3779b9UL + (hash << 6) + (hash >> 2));
@@ -218,6 +223,7 @@ static RefreshDecision decidePageRefresh(const PageManager& pages,
   return {false, "display hash unchanged"};
 }
 
+#if FEATURE_MEAL
 static uint8_t nextMealSlot(uint8_t current, uint8_t count) {
   const uint8_t safeCount = count == 0 ? 1 : count;
   const uint8_t safeCurrent = current == 0 ? 1 : current;
@@ -254,6 +260,7 @@ static void renderMealFailureAndSleep(const PageManager& pages,
   uiState.hasRenderedValidData = true;
   enterDeepSleep();
 }
+#endif
 
 static void logAction(const InputAction& action) {
   Serial1.printf("[INPUT] action=%s target=%u clicks=%u\n",
@@ -351,6 +358,7 @@ void setup() {
   Serial1.printf("[setup] config    : %s%s\n",
                  hasSettings ? "present" : "missing",
                  settings.fromBootstrap ? " bootstrap" : "");
+  Serial1.printf("[features] meal    : %s\n", kFeatureMealEnabled ? "enabled" : "disabled");
   logQuotaApiTarget(settings.quotaApiUrl);
   logPageRegistry();
 
@@ -374,12 +382,17 @@ void setup() {
     pages.nextPage();
     pageChanged = pages.currentSlot() != before;
   } else if (action.type == InputActionType::NextSubPage) {
+#if FEATURE_MEAL
     if (pages.currentPage().id == PageId::TodayMeal) {
       uiState.currentMealSlot = nextMealSlot(uiState.currentMealSlot, uiState.lastMealSlotCount);
     } else {
       Serial1.println("[INPUT] subpage action ignored on page without subpages");
       reason = RefreshReason::Timer;
     }
+#else
+    Serial1.println("[INPUT] subpage action ignored; meal feature disabled");
+    reason = RefreshReason::Timer;
+#endif
   } else if (action.type == InputActionType::GoToPage && action.targetPageSlot > 0) {
     const uint8_t before = pages.currentSlot();
     if (pages.isValidSlot(action.targetPageSlot)) {
@@ -393,9 +406,11 @@ void setup() {
   char indicator[12];
   pages.formatPageIndicator(indicator, sizeof(indicator));
   char subIndicator[12] = "";
+#if FEATURE_MEAL
   if (pages.currentPage().id == PageId::TodayMeal) {
     formatMealIndicator(subIndicator, sizeof(subIndicator));
   }
+#endif
   Serial1.printf("[NAV] P%u -> P%u reason=%s\n",
                  static_cast<unsigned>(fromSlot),
                  static_cast<unsigned>(pages.currentSlot()),
@@ -416,8 +431,10 @@ void setup() {
 
   QuotaPayload payload{};
   QuotaPayload* payloadPtr = nullptr;
+#if FEATURE_MEAL
   MealImageMeta mealMeta{};
   MealImageMeta* mealMetaPtr = nullptr;
+#endif
   bool wifiStillOn = false;
   if (needsWifi) {
     if (!hasSettings) {
@@ -425,9 +442,11 @@ void setup() {
     }
     bool wifiConnected = connectWifi(settings);
     if (!wifiConnected) {
+#if FEATURE_MEAL
       if (pages.currentPage().id == PageId::TodayMeal) {
         renderMealFailureAndSleep(pages, battery, "wifi");
       }
+#endif
       if (!uiState.hasRenderedValidData) {
         shutdownWifi();
         startProvisioningAndSleep(settings, "wifi-failed");
@@ -455,7 +474,9 @@ void setup() {
       payload = fetched.payload;
       payloadPtr = &payload;
       logPayloadSummary(payload);
-    } else if (pages.currentPage().id == PageId::TodayMeal) {
+    }
+#if FEATURE_MEAL
+    else if (pages.currentPage().id == PageId::TodayMeal) {
       FetchMealMetaResult fetched = fetchMealImageMeta(settings.quotaApiUrl, uiState.currentMealSlot);
       if (!fetched.ok) {
         shutdownWifi();
@@ -469,16 +490,20 @@ void setup() {
       mealMetaPtr = &mealMeta;
       logMealSummary(mealMeta);
     }
+#endif
   }
 
   uint32_t pagePayloadHash = 0;
   if (pages.currentPage().id == PageId::CodexQuota && payloadPtr) {
     pagePayloadHash = quotaRenderHash(*payloadPtr);
-  } else if (pages.currentPage().id == PageId::TodayMeal && mealMetaPtr) {
+  }
+#if FEATURE_MEAL
+  else if (pages.currentPage().id == PageId::TodayMeal && mealMetaPtr) {
     pagePayloadHash = mealImageMetaHash(*mealMetaPtr);
   } else if (pages.currentPage().id == PageId::TodayMeal) {
     pagePayloadHash = mealPlaceholderHash();
   }
+#endif
   pagePayloadHash = mixHash(pagePayloadHash, batteryRenderHash(battery));
   const uint32_t pageHash = pages.currentPageContentHash(pagePayloadHash, indicator);
   RefreshDecision decision = ambiguousInput ?
@@ -489,6 +514,7 @@ void setup() {
   Serial1.printf("[render] decision : %s (%s)\n", decision.shouldRefresh ? "refresh" : "skip", decision.reason);
 
   if (decision.shouldRefresh) {
+#if FEATURE_MEAL
     uint8_t* mealImage = nullptr;
     const char* mealError = nullptr;
     if (pages.currentPage().id == PageId::TodayMeal) {
@@ -512,10 +538,15 @@ void setup() {
       Serial1.printf("[meal] raw bytes : %u\n", static_cast<unsigned>(raw.bytesRead));
     }
     PageRenderData renderData{payloadPtr, mealImage, mealImage ? kMealImageBytes : 0, mealError, subIndicator};
+#else
+    PageRenderData renderData{payloadPtr};
+#endif
     pages.refreshCurrentPage(renderData, battery);
+#if FEATURE_MEAL
     if (mealImage) {
       free(mealImage);
     }
+#endif
     uiState.currentPageSlot = pages.currentSlot();
     uiState.lastDisplayedContentHash = pageHash;
     uiState.lastDisplayedPageSlot = pages.currentSlot();

@@ -4,7 +4,10 @@
 #include <stdint.h>
 
 #include "battery.h"
+#include "feature_flags.h"
+#if FEATURE_MEAL
 #include "meal_image_client.h"
+#endif
 #include "quota_client.h"
 
 enum class PageId : uint8_t {
@@ -35,10 +38,12 @@ struct PageDescriptor {
 
 struct PageRenderData {
   const QuotaPayload* quotaPayload;
+#if FEATURE_MEAL
   const uint8_t* mealImage4bpp;
   size_t mealImageBytes;
   const char* mealError;
   const char* subPageIndicator;
+#endif
 };
 
 class PageManager {

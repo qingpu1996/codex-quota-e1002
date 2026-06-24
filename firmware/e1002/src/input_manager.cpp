@@ -1,5 +1,7 @@
 #include "input_manager.h"
 
+#include "feature_flags.h"
+
 #ifndef QUOTA_HOST_TEST
 #include <Arduino.h>
 #include "driver/gpio.h"
@@ -118,7 +120,11 @@ InputAction actionFromWakeMask(uint64_t wakeMask) {
 
 InputAction middleButtonActionFromHoldDuration(uint32_t holdMs) {
   if (holdMs >= BUTTON_LONG_PRESS_MS) {
+#if FEATURE_MEAL
     return {InputActionType::NextSubPage, 0, 0};
+#else
+    return {InputActionType::NextPage, 0, 0};
+#endif
   }
   return {InputActionType::NextPage, 0, 0};
 }
@@ -250,8 +256,12 @@ InputAction collectMiddleButtonActionFromWake() {
   const uint32_t held = millis() - start;
   const bool longPress = digitalRead(PIN_KEY1_MIDDLE) == LOW;
   if (longPress) {
+#if FEATURE_MEAL
     Serial1.printf("[INPUT] KEY1 MIDDLE long press hold=%lu ms; trigger before release\n", static_cast<unsigned long>(held));
-    return {InputActionType::NextSubPage, 0, 0};
+#else
+    Serial1.printf("[INPUT] KEY1 MIDDLE long press hold=%lu ms; meal feature disabled, trigger next page\n", static_cast<unsigned long>(held));
+#endif
+    return middleButtonActionFromHoldDuration(BUTTON_LONG_PRESS_MS);
   }
   Serial1.printf("[INPUT] KEY1 MIDDLE short press hold=%lu ms\n", static_cast<unsigned long>(held));
   delay(BUTTON_DEBOUNCE_MS);

@@ -1,50 +1,97 @@
 # codex-quota-dashboard
 
-局域网内运行的 Codex 套餐额度服务，只给 reTerminal E1002 自定义固件提供脱敏 JSON API 和食谱图片接口。E1002 固件不加载 HTML、CSS、JavaScript、iframe 或浏览器页面，只获取数据并在设备端用原生绘图 API 渲染。
+这是运行在 Mac 上的局域网服务，给 reTerminal E1002 固件提供 Codex 额度 JSON、token 用量摘要和今日食谱图片。服务不提供 HTML dashboard，不提供 iframe 页面，也不需要公网入口。
+
+## 职责
+
+- 长期运行 `codex app-server --stdio`。
+- 读取当前 Codex CLI 登录会话的账户、额度和用量信息。
+- 将数据归一化成脱敏 JSON。
+- 从本地 Excel 生成今日食谱图片。
+- 只在局域网 IPv4 上提供 E1002 固件接口。
+- 失败时保留最近一次成功缓存。
 
 ## 架构
 
-链路：
-
 ```text
 Codex CLI 登录状态
-  -> codex app-server
-  -> Mac mini 局域网 HTTP 服务
-  -> E1002 JSON / raw image 固件客户端
-  -> reTerminal E1002
+  -> codex app-server --stdio
+  -> Node.js LaunchAgent
+  -> /api/device/<deviceToken>
+  -> E1002 固件
 ```
 
-服务由当前 macOS 用户的 LaunchAgent 运行。Node 进程长期启动 `codex app-server --stdio`，通过 JSONL JSON-RPC 调用：
+服务调用的 Codex RPC：
 
 - `initialize`
 - `initialized`
-- `account/read`，使用 `refreshToken=false`
+- `account/read`
 - `account/rateLimits/read`
 - `account/usage/read`
 
-HTTP 请求只读取内存缓存，不会在每次访问时重新启动 App Server。最后一次成功的脱敏数据会写入：
+HTTP 请求只读取内存缓存，不会在每次请求时重新启动 Codex App Server。
+
+## 安装和运行
+
+```bash
+cd service/dashboard
+scripts/install-launchd.sh
+```
+
+安装脚本会：
+
+- 探测 `codex`、`node`、`npm`。
+- 探测默认网络接口、局域网 IPv4 和 MAC 地址。
+- 执行 `npm install`。
+- 执行 TypeScript 构建。
+- 创建或更新私有配置。
+- 写入并启动当前用户的 LaunchAgent。
+- 等待 `/healthz` 返回成功。
+- 打印设备 API URL。
+
+LaunchAgent：
 
 ```text
+~/Library/LaunchAgents/com.qingpu.codex-quota-dashboard.plist
+```
+
+配置和缓存：
+
+```text
+~/Library/Application Support/CodexQuotaDashboard/config.json
 ~/Library/Application Support/CodexQuotaDashboard/cache.json
 ```
 
-## 数据来源和隐私边界
+日志：
 
-数据来自当前 Mac 用户已经登录的 Codex CLI 会话，所以不需要 OpenAI API Key。
+```text
+~/Library/Logs/CodexQuotaDashboard/stdout.log
+~/Library/Logs/CodexQuotaDashboard/stderr.log
+```
 
-项目不会读取、复制或输出 `~/.codex/auth.json`。认证细节只由 `codex app-server` 自己处理，本服务只接收 `account/read`、`account/rateLimits/read` 和 `account/usage/read` 返回后归一化出的脱敏字段。
+## 常用命令
 
-API 不显示邮箱、账户 ID、OAuth Token、Cookie、device token 或原始 RPC 响应。错误 token 和未知路径统一返回 404。
+```bash
+scripts/status.sh
+scripts/logs.sh
+scripts/logs.sh follow
+scripts/restart.sh
+scripts/update-lan-ip.sh
+scripts/regenerate-device-token.sh
+scripts/uninstall-launchd.sh
+```
+
+`uninstall-launchd.sh` 只卸载 LaunchAgent，不删除配置和缓存。
 
 ## 设备 API
 
 主接口：
 
 ```text
-http://<Mac局域网IP>:19527/api/device/<deviceToken>
+GET http://<Mac-IP>:19527/api/device/<deviceToken>
 ```
 
-`deviceToken` 是至少 32 字节安全随机值，保存在本机私有配置中，不提交到 Git。接口只返回屏幕绘制所需字段：
+响应示例：
 
 ```json
 {
@@ -63,149 +110,145 @@ http://<Mac局域网IP>:19527/api/device/<deviceToken>
       "remainingPercent": 73,
       "resetsAt": 1780003600,
       "resetText": "Jun 23 21:40"
+    },
+    {
+      "key": "weekly",
+      "title": "WEEK",
+      "remainingPercent": 48,
+      "resetsAt": 1780520000,
+      "resetText": "Jun 29 08:00"
     }
   ]
 }
 ```
 
-接口带 `Cache-Control: no-store`，错误 token 返回 404，响应体受大小限制。
+规则：
+
+- `deviceToken` 是独立随机值，保存在本机配置中。
+- 错误 token 返回 404。
+- 响应带 `Cache-Control: no-store`。
+- `remainingPercent` 是 0 到 100 的整数。
+- `windows` 最多返回两个，优先 5 小时和周额度。
+- `resetText` 由 Mac 按本机时区预格式化。
+- 不返回邮箱、账户 ID、OAuth token、Cookie、device token 或原始 RPC。
+
+旧入口已经移除：
+
+```text
+GET /e1002/<token>       -> 404
+GET /api/e1002/<token>   -> 404
+```
+
+## 可选食谱模块
+
+服务端保留食谱图片 API，但它只是后端能力。只有固件以 `FEATURE_MEAL=1` 构建时，E1002 才会请求 `/meal/...`。
+
+如果固件以 `FEATURE_MEAL=0` 构建：
+
+- 不需要准备 Excel。
+- 不需要挂载 NAS 食谱目录。
+- 不会请求 `/api/device/<deviceToken>/meal/today`。
+- 服务端仍可正常运行额度 API。
 
 ## 食谱图片 API
 
-食谱页使用同一个设备 token：
+食谱接口与额度接口共用同一个 `deviceToken`：
 
 ```text
-GET /api/device/<deviceToken>/meal/today
-GET /api/device/<deviceToken>/meal/today.raw
-GET /api/device/<deviceToken>/meal/today.png
+GET /api/device/<deviceToken>/meal/today?slot=1
+GET /api/device/<deviceToken>/meal/today.raw?slot=1
+GET /api/device/<deviceToken>/meal/today.png?slot=1
 ```
 
-- `meal/today` 返回图片元数据。
-- `meal/today.raw` 返回 E1002 固件使用的 800x480 4bpp 原始图像。
-- `meal/today.png` 只用于浏览器或本机调试预览。
+- `meal/today` 返回图片元数据，最大 2KB。
+- `meal/today.raw` 返回 E1002 固件使用的 800 x 480 4bpp 原始图像，大小固定 192000 字节。
+- `meal/today.png` 是调试预览用 PNG。
 
-默认读取：
+`meal/today.raw` 的 `Content-Type` 是：
+
+```text
+application/vnd.codex.e1002-4bpp
+```
+
+## 食谱 Excel
+
+默认路径：
 
 ```text
 ~/Documents/codex-quota-dashboard/meal-plan.xlsx
 ```
 
-也可以通过环境变量覆盖：
+可用环境变量覆盖：
 
 ```bash
 CODEX_MEAL_EXCEL_PATH=/path/to/meal-plan.xlsx scripts/restart.sh
 ```
 
-Excel 路径不应提交到 Git；仓库只包含解析和渲染逻辑。
+Excel 需要包含工作表：
 
-## 安装
+- `一周食谱`
+- `每日汇总`
 
-```bash
-cd /path/to/codex-quota-dashboard
-scripts/install-launchd.sh
-```
+`一周食谱` 使用的列：
 
-安装脚本会：
+- `星期`
+- `餐次`
+- `餐名`
+- `食材/份量`
+- `做法/备注`
+- `热量`
+- `蛋白质`
+- `碳水`
+- `脂肪`
 
-- 探测 `codex`、`node`、默认网络接口、局域网 IPv4 和 MAC 地址。
-- 安装 npm 依赖。
-- 构建 TypeScript。
-- 创建 `~/Library/Application Support/CodexQuotaDashboard/config.json`。
-- 生成设备 API 使用的随机 `deviceToken`。
-- 安装并启动当前用户级 LaunchAgent：
+`每日汇总` 使用的列：
 
-```text
-~/Library/LaunchAgents/com.qingpu.codex-quota-dashboard.plist
-```
+- `星期`
+- `热量`
+- `蛋白质`
+- `碳水`
+- `脂肪`
+- `蔬菜`
 
-脚本最后会打印设备 API URL。完整 URL 包含 token，只应填入本机固件配置或用于局域网验证，不要提交到 Git。
+如果 Excel 不存在或格式错误，服务仍会返回一张错误状态图片，固件可以显示“今日食谱不可用”而不是崩溃。
 
-## 启动、停止、重启
+## 局域网要求
 
-```bash
-scripts/restart.sh
-scripts/uninstall-launchd.sh
-```
-
-`uninstall-launchd.sh` 只卸载 LaunchAgent，保留配置和缓存。
-
-## 状态和日志
-
-```bash
-scripts/status.sh
-scripts/logs.sh
-scripts/logs.sh follow
-```
-
-日志路径：
-
-```text
-~/Library/Logs/CodexQuotaDashboard/stdout.log
-~/Library/Logs/CodexQuotaDashboard/stderr.log
-```
-
-## 更新局域网 IP
-
-如果 Mac mini 的 DHCP 地址变化，服务不会静默改 URL。状态脚本会显示 configured IP 和 current IP 的差异。
-
-显式更新：
-
-```bash
-scripts/update-lan-ip.sh
-```
-
-更新后需要把新的设备 API URL 填回固件本地配置。
-
-## 重新生成设备 Token
-
-```bash
-scripts/regenerate-device-token.sh
-```
-
-这会改变设备 API URL。重新生成后需要更新 `firmware/e1002/include/secrets.h` 或后续配网页面中的 API 设置。
-
-## Codex 重新登录后的处理
-
-如果 Codex CLI 登录状态过期，先在终端里重新登录 Codex CLI，然后重启服务：
-
-```bash
-scripts/restart.sh
-```
-
-服务失败期间会返回最后一次成功缓存，并标记数据可能已过期。
-
-## macOS 防火墙
-
-如果 macOS 防火墙弹窗询问是否允许 Node 接收入站连接，需要点击“允许”，否则 E1002 可能无法从局域网访问 Mac mini。
-
-不要用 `sudo` 修改系统防火墙；本项目只安装当前用户 LaunchAgent。
-
-## E1002 与 Mac 不同网时
-
-如果 E1002 和 Mac mini 不在同一个二层/三层可达网络，设备 API 会访问失败。常见原因：
+E1002 必须能访问 Mac 的局域网 IPv4。常见问题：
 
 - E1002 在 Guest Wi-Fi。
 - 路由器开启 AP Isolation。
-- VLAN 防火墙阻止设备访问 Mac。
-- Mac IP 已改变。
-- 固件中的 device token 仍是旧 token。
+- VLAN 或防火墙阻止设备访问 Mac。
+- Mac IP 变化后固件仍使用旧 URL。
 - macOS 防火墙拒绝 Node 入站连接。
 
-## 为什么建议 DHCP 地址保留
+建议在路由器里给 Mac 设置 DHCP Reservation。固件里优先使用 IPv4 URL，而不是依赖 mDNS。
 
-固件中填写的是固定 IPv4 URL。若 Mac mini 的 IPv4 改变，E1002 仍会请求旧地址。建议在路由器中为 Mac 默认接口的 MAC 地址设置 DHCP 地址保留。
-
-优先使用 IPv4 而不是 `mac-mini.local`，是因为嵌入式设备和隔离 Wi-Fi 对 mDNS 的支持不稳定，而 IPv4 地址在同网段内更可预测。
-
-## 手机验证局域网 API
-
-手机连接与 E1002 相同的 Wi-Fi，访问：
+手机验证方式：
 
 ```text
-http://<Mac局域网IP>:19527/api/device/<deviceToken>
+http://<Mac-IP>:19527/api/device/<deviceToken>
 ```
 
-能看到 JSON 说明局域网、macOS 防火墙和 token 都基本正确。不要把完整 URL 发到公网聊天或提交到仓库。
+手机需要和 E1002 位于同一可达 Wi-Fi。能看到 JSON，说明局域网、macOS 防火墙和 token 基本正确。
+
+## 隐私边界
+
+服务不会读取、复制或输出 `~/.codex/auth.json`。认证材料只由 `codex app-server` 自己处理。
+
+不要提交：
+
+- `dist/`
+- `node_modules/`
+- `generated/`
+- `preview/`
+- `.env`
+- 日志
+- 完整设备 API URL
+- device token
+- Excel 的私人路径或私人内容
+
+日志和 API 响应不应包含 Wi-Fi 密码、OAuth token、Cookie、邮箱或账户 ID。
 
 ## 开发验证
 
@@ -213,4 +256,16 @@ http://<Mac局域网IP>:19527/api/device/<deviceToken>
 npm test
 ```
 
-测试覆盖 JSONL 分段输入、JSON-RPC 关联和超时、当前和旧版额度字段、primary/secondary、套餐解析、token 用量、clamp、去重、窗口识别、缓存回退、设备 token 路由、脱敏、响应大小限制、旧页面路由 404、食谱图片接口和 no-store 头。
+测试覆盖：
+
+- JSONL 分段输入。
+- JSON-RPC 请求关联和超时。
+- 当前和旧版额度字段。
+- 5 小时额度、周额度和 fallback 窗口。
+- token 用量格式化。
+- 缓存回退和 stale 状态。
+- 设备 token 路由。
+- 旧页面入口 404。
+- API 脱敏和响应大小限制。
+- 食谱 Excel 解析、图片元数据和 raw 图片接口。
+- `Cache-Control: no-store` 和基础响应头。

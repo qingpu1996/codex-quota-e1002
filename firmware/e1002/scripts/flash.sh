@@ -4,6 +4,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 scripts/check-secrets.sh >/dev/null
+env_name="reterminal_e1002"
+
+if [[ "${1:-}" != "" && "${1:-}" != "--clean" ]]; then
+  echo "Usage: scripts/flash.sh [--clean]" >&2
+  echo "Use FEATURE_MEAL=0 or .local/features.env to choose optional modules." >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == "--clean" ]]; then
+  scripts/build.sh --clean
+else
+  scripts/build.sh
+fi
 
 ports=()
 while IFS= read -r port; do
@@ -29,4 +42,5 @@ if [[ "${#ports[@]}" -gt 1 ]]; then
   exit 1
 fi
 
-pio run -e reterminal_e1002 -t upload --upload-port "${ports[0]}"
+echo "Flashing PlatformIO env: $env_name"
+pio run -e "$env_name" -t upload --upload-port "${ports[0]}"

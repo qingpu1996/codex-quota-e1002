@@ -3,13 +3,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "feature_flags.h"
+
 #ifndef QUOTA_HOST_TEST
 #include "display.h"
 #endif
 
 static constexpr PageDescriptor kPages[] = {
   {PageId::CodexQuota, 1, "CodexQuota", RefreshPolicy::PeriodicData},
+#if FEATURE_MEAL
   {PageId::TodayMeal, 2, "TodayMeal", RefreshPolicy::PeriodicData},
+#endif
 };
 
 static uint32_t fnv1a(uint32_t hash, const void* data, size_t len) {
@@ -103,6 +107,7 @@ void PageManager::renderCurrentPage(const PageRenderData& data, const BatterySta
         renderQuotaPage(*data.quotaPayload, indicator, battery);
       }
       break;
+#if FEATURE_MEAL
     case PageId::TodayMeal:
       if (data.mealImage4bpp && data.mealImageBytes == kMealImageBytes) {
         renderMealImagePage(data.mealImage4bpp, data.mealImageBytes, indicator, data.subPageIndicator, battery);
@@ -112,6 +117,7 @@ void PageManager::renderCurrentPage(const PageRenderData& data, const BatterySta
         renderTodayMealPage(indicator, battery);
       }
       break;
+#endif
   }
 }
 
