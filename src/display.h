@@ -1,0 +1,7 @@
+#pragma once
+
+#include "quota_client.h"
+
+void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator);
+void renderTodayMealPage(const char* pageIndicator);
+void renderSetupError(const char* category);
