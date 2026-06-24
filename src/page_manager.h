@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "battery.h"
+#include "meal_image_client.h"
 #include "quota_client.h"
 
 enum class PageId : uint8_t {
@@ -16,6 +17,7 @@ enum class RefreshReason : uint8_t {
   Timer,
   DirectNavigation,
   NextNavigation,
+  SubPageNavigation,
   ManualRefresh,
 };
 
@@ -29,6 +31,14 @@ struct PageDescriptor {
   uint8_t slot;
   const char* name;
   RefreshPolicy refreshPolicy;
+};
+
+struct PageRenderData {
+  const QuotaPayload* quotaPayload;
+  const uint8_t* mealImage4bpp;
+  size_t mealImageBytes;
+  const char* mealError;
+  const char* subPageIndicator;
 };
 
 class PageManager {
@@ -50,8 +60,8 @@ class PageManager {
   uint32_t pageContentHash(uint8_t slot, uint32_t pagePayloadHash, const char* indicator) const;
 
 #ifndef QUOTA_HOST_TEST
-  void renderCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const;
-  void refreshCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const;
+  void renderCurrentPage(const PageRenderData& data, const BatteryStatus& battery) const;
+  void refreshCurrentPage(const PageRenderData& data, const BatteryStatus& battery) const;
 #endif
 
   static const PageDescriptor* registry();

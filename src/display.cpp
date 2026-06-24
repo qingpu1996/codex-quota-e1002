@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include "meal_image_client.h"
 #include "TFT_eSPI.h"
 
 #ifndef EPAPER_ENABLE
@@ -70,14 +71,18 @@ static void drawEmptyCard(int x, int y, int w, int h) {
   centered("NO WINDOW", x + w / 2, y + h / 2, 3, TFT_RED);
 }
 
-static void drawFooter(const char* pageIndicator, const BatteryStatus& battery) {
+static void drawFooter(const char* pageIndicator, const char* subPageIndicator, const BatteryStatus& battery) {
   char batteryLabel[16];
   formatBatteryLabel(battery, batteryLabel, sizeof(batteryLabel));
 
   epaper.drawLine(20, 416, 780, 416, TFT_BLACK);
-  text("LEFT:N=PAGE", 34, 432, 2, TFT_BLACK);
-  text("MID:NEXT", 220, 432, 2, TFT_BLACK);
-  text("GREEN:REFRESH", 370, 432, 2, TFT_BLACK);
+  text("L:N=PAGE", 34, 432, 2, TFT_BLACK);
+  text("M:NEXT", 170, 432, 2, TFT_BLACK);
+  text("HOLD:SUB", 280, 432, 2, TFT_BLACK);
+  text("G:REFRESH", 420, 432, 2, TFT_BLACK);
+  if (subPageIndicator && subPageIndicator[0] != '\0') {
+    text(subPageIndicator, 596, 432, 2, TFT_BLACK, TR_DATUM);
+  }
   text(batteryLabel, 700, 432, 2, batteryColor(battery), TR_DATUM);
   text(pageIndicator, 766, 432, 2, TFT_BLACK, TR_DATUM);
 }
@@ -111,7 +116,7 @@ void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator, con
     drawEmptyCard(416, cardY, cardW, cardH);
   }
 
-  drawFooter(pageIndicator, battery);
+  drawFooter(pageIndicator, "", battery);
 
   Serial1.println("[display] update start");
   Serial1.flush();
@@ -136,13 +141,55 @@ void renderTodayMealPage(const char* pageIndicator, const BatteryStatus& battery
   centered("NOT CONFIGURED", 400, 235, 6, TFT_RED);
   centered("MEAL DATA WILL BE ADDED NEXT", 400, 320, 2, TFT_BLACK);
 
-  drawFooter(pageIndicator, battery);
+  drawFooter(pageIndicator, "", battery);
 
   Serial1.println("[display] meal placeholder update start");
   Serial1.flush();
   const uint32_t start = millis();
   epaper.update();
   Serial1.printf("[display] meal placeholder update done in %lu ms\n", static_cast<unsigned long>(millis() - start));
+  epaper.sleep();
+}
+
+void renderMealImagePage(const uint8_t* image4bpp, size_t imageBytes, const char* pageIndicator, const char* subPageIndicator, const BatteryStatus& battery) {
+  if (!image4bpp || imageBytes != kMealImageBytes) {
+    renderMealErrorPage("image-buffer", pageIndicator, subPageIndicator, battery);
+    return;
+  }
+  epaper.begin();
+  epaper.pushImage(0, 0, 800, 480, reinterpret_cast<uint16_t*>(const_cast<uint8_t*>(image4bpp)), 4);
+  drawFooter(pageIndicator, subPageIndicator, battery);
+
+  Serial1.println("[display] meal image update start");
+  Serial1.flush();
+  const uint32_t start = millis();
+  epaper.update();
+  Serial1.printf("[display] meal image update done in %lu ms\n", static_cast<unsigned long>(millis() - start));
+  epaper.sleep();
+}
+
+void renderMealErrorPage(const char* category, const char* pageIndicator, const char* subPageIndicator, const BatteryStatus& battery) {
+  epaper.begin();
+  epaper.fillScreen(TFT_WHITE);
+
+  epaper.drawRect(0, 0, 800, 480, TFT_BLACK);
+  epaper.drawRect(3, 3, 794, 474, TFT_BLACK);
+
+  text("MEAL PLAN", 28, 24, 4, TFT_BLUE);
+  text("ERROR", 772, 24, 3, TFT_RED, TR_DATUM);
+  epaper.drawLine(20, 72, 780, 72, TFT_BLACK);
+
+  centered("MEAL IMAGE ERROR", 400, 185, 5, TFT_RED);
+  centered(category ? category : "unknown", 400, 260, 3, TFT_BLACK);
+  centered("KEEP OLD PAGE IF AVAILABLE", 400, 325, 2, TFT_BLUE);
+
+  drawFooter(pageIndicator, subPageIndicator, battery);
+
+  Serial1.println("[display] meal error update start");
+  Serial1.flush();
+  const uint32_t start = millis();
+  epaper.update();
+  Serial1.printf("[display] meal error update done in %lu ms\n", static_cast<unsigned long>(millis() - start));
   epaper.sleep();
 }
 

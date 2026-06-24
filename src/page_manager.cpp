@@ -9,7 +9,7 @@
 
 static constexpr PageDescriptor kPages[] = {
   {PageId::CodexQuota, 1, "CodexQuota", RefreshPolicy::PeriodicData},
-  {PageId::TodayMeal, 2, "TodayMeal", RefreshPolicy::Static},
+  {PageId::TodayMeal, 2, "TodayMeal", RefreshPolicy::PeriodicData},
 };
 
 static uint32_t fnv1a(uint32_t hash, const void* data, size_t len) {
@@ -94,23 +94,29 @@ uint32_t PageManager::pageContentHash(uint8_t slot, uint32_t pagePayloadHash, co
 }
 
 #ifndef QUOTA_HOST_TEST
-void PageManager::renderCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const {
+void PageManager::renderCurrentPage(const PageRenderData& data, const BatteryStatus& battery) const {
   char indicator[12];
   formatPageIndicator(indicator, sizeof(indicator));
   switch (currentPage().id) {
     case PageId::CodexQuota:
-      if (payload) {
-        renderQuotaPage(*payload, indicator, battery);
+      if (data.quotaPayload) {
+        renderQuotaPage(*data.quotaPayload, indicator, battery);
       }
       break;
     case PageId::TodayMeal:
-      renderTodayMealPage(indicator, battery);
+      if (data.mealImage4bpp && data.mealImageBytes == kMealImageBytes) {
+        renderMealImagePage(data.mealImage4bpp, data.mealImageBytes, indicator, data.subPageIndicator, battery);
+      } else if (data.mealError) {
+        renderMealErrorPage(data.mealError, indicator, data.subPageIndicator, battery);
+      } else {
+        renderTodayMealPage(indicator, battery);
+      }
       break;
   }
 }
 
-void PageManager::refreshCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const {
-  renderCurrentPage(payload, battery);
+void PageManager::refreshCurrentPage(const PageRenderData& data, const BatteryStatus& battery) const {
+  renderCurrentPage(data, battery);
 }
 #endif
 
@@ -144,6 +150,7 @@ const char* refreshReasonName(RefreshReason reason) {
     case RefreshReason::Timer: return "TIMER";
     case RefreshReason::DirectNavigation: return "DIRECT";
     case RefreshReason::NextNavigation: return "NEXT";
+    case RefreshReason::SubPageNavigation: return "SUBPAGE";
     case RefreshReason::ManualRefresh: return "MANUAL";
   }
   return "UNKNOWN";

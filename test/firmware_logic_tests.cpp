@@ -4,6 +4,7 @@
 
 #include "battery.h"
 #include "input_manager.h"
+#include "meal_image_client.h"
 #include "page_manager.h"
 #include "provisioning.h"
 #include "quota_client.h"
@@ -187,6 +188,13 @@ static void test_middle_action_advances_one_page() {
   assert(pages.currentSlot() == 2);
 }
 
+static void test_middle_long_press_is_next_subpage() {
+  InputAction shortPress = middleButtonActionFromHoldDuration(BUTTON_LONG_PRESS_MS - 1);
+  InputAction longPress = middleButtonActionFromHoldDuration(BUTTON_LONG_PRESS_MS);
+  assert(shortPress.type == InputActionType::NextPage);
+  assert(longPress.type == InputActionType::NextSubPage);
+}
+
 static void test_green_action_does_not_change_page() {
   PageManager pages(2);
   InputAction action = actionFromWakeMask(1ULL << PIN_KEY0_GREEN);
@@ -268,7 +276,7 @@ static void test_page_one_and_two_hash_differ_with_same_content() {
 
 static void test_static_page_timer_does_not_require_network_policy() {
   PageManager pages(2);
-  assert(pages.currentPage().refreshPolicy == RefreshPolicy::Static);
+  assert(pages.currentPage().refreshPolicy == RefreshPolicy::PeriodicData);
 }
 
 static void test_page_switch_requires_refresh_by_page_change() {
@@ -368,6 +376,68 @@ static void test_battery_hash_uses_displayed_label() {
   assert(batteryRenderHash(a) != batteryRenderHash(c));
 }
 
+static void test_meal_endpoint_url_builder() {
+  char url[288];
+  assert(buildMealEndpointUrl("http://192.168.5.156:19527/api/device/secret-token", "meal/today", url, sizeof(url)));
+  assert(strcmp(url, "http://192.168.5.156:19527/api/device/secret-token/meal/today") == 0);
+  assert(!buildMealEndpointUrl("http://192.168.5.156:19527/e1002/token", "meal/today", url, sizeof(url)));
+}
+
+static void test_meal_meta_parses_valid_json() {
+  const char* json =
+    "{\"schemaVersion\":1,\"generatedAt\":1780000000,\"date\":\"2026-06-24\",\"weekday\":\"周三\","
+    "\"status\":\"fresh\",\"updatedText\":\"更新 06-19 23:34\",\"slot\":2,\"slotCount\":4,"
+    "\"mealTitle\":\"测试午餐\",\"mealCount\":4,"
+    "\"summary\":{\"calories\":1894},"
+    "\"image\":{\"format\":\"e1002-4bpp\",\"width\":800,\"height\":480,\"rawBytes\":192000,"
+    "\"hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}";
+  MealImageMeta meta{};
+  MealMetaParseResult result = parseMealMetaJson(json, strlen(json), &meta);
+  assert(result.ok);
+  assert(strcmp(meta.status, "fresh") == 0);
+  assert(strcmp(meta.date, "2026-06-24") == 0);
+  assert(meta.slot == 2);
+  assert(meta.slotCount == 4);
+  assert(strcmp(meta.mealTitle, "测试午餐") == 0);
+  assert(meta.rawBytes == kMealImageBytes);
+}
+
+static void test_meal_meta_rejects_bad_shape() {
+  const char* json =
+    "{\"schemaVersion\":1,\"date\":\"2026-06-24\",\"weekday\":\"周三\",\"status\":\"fresh\","
+    "\"slot\":1,\"slotCount\":4,\"mealTitle\":\"测试\","
+    "\"image\":{\"format\":\"png\",\"width\":800,\"height\":480,\"rawBytes\":192000,"
+    "\"hash\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}";
+  MealImageMeta meta{};
+  MealMetaParseResult result = parseMealMetaJson(json, strlen(json), &meta);
+  assert(!result.ok);
+  assert(result.error == MealImageError::ImageShape);
+}
+
+static void test_meal_meta_hash_uses_image_hash_not_generated_at() {
+  const char* a =
+    "{\"schemaVersion\":1,\"generatedAt\":1,\"date\":\"2026-06-24\",\"weekday\":\"周三\","
+    "\"status\":\"fresh\",\"slot\":1,\"slotCount\":4,\"mealTitle\":\"测试\","
+    "\"image\":{\"format\":\"e1002-4bpp\",\"width\":800,\"height\":480,\"rawBytes\":192000,"
+    "\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}";
+  const char* b =
+    "{\"schemaVersion\":1,\"generatedAt\":2,\"date\":\"2026-06-24\",\"weekday\":\"周三\","
+    "\"status\":\"fresh\",\"slot\":1,\"slotCount\":4,\"mealTitle\":\"测试\","
+    "\"image\":{\"format\":\"e1002-4bpp\",\"width\":800,\"height\":480,\"rawBytes\":192000,"
+    "\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}";
+  const char* c =
+    "{\"schemaVersion\":1,\"generatedAt\":2,\"date\":\"2026-06-24\",\"weekday\":\"周三\","
+    "\"status\":\"fresh\",\"slot\":2,\"slotCount\":4,\"mealTitle\":\"测试\","
+    "\"image\":{\"format\":\"e1002-4bpp\",\"width\":800,\"height\":480,\"rawBytes\":192000,"
+    "\"hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}";
+  MealImageMeta ma{}, mb{}, mc{};
+  assert(parseMealMetaJson(a, strlen(a), &ma).ok);
+  assert(parseMealMetaJson(b, strlen(b), &mb).ok);
+  assert(parseMealMetaJson(c, strlen(c), &mc).ok);
+  assert(mealImageMetaHash(ma) == mealImageMetaHash(mb));
+  assert(mealImageMetaHash(ma) != mealImageMetaHash(mc));
+}
+
 int main() {
   test_normal_json();
   test_schema_wrong();
@@ -389,6 +459,7 @@ int main() {
   test_direct_click_three_invalid_with_two_pages();
   test_direct_current_page_has_no_page_change();
   test_middle_action_advances_one_page();
+  test_middle_long_press_is_next_subpage();
   test_green_action_does_not_change_page();
   test_timer_wake_does_not_change_page();
   test_left_wake_press_counts_as_first_click();
@@ -413,6 +484,10 @@ int main() {
   test_battery_percent_interpolates();
   test_battery_label_formats();
   test_battery_hash_uses_displayed_label();
+  test_meal_endpoint_url_builder();
+  test_meal_meta_parses_valid_json();
+  test_meal_meta_rejects_bad_shape();
+  test_meal_meta_hash_uses_image_hash_not_generated_at();
   puts("firmware logic tests passed");
   return 0;
 }

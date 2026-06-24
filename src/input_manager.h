@@ -6,6 +6,7 @@ constexpr uint8_t PIN_KEY0_GREEN = 3;
 constexpr uint8_t PIN_KEY1_MIDDLE = 4;
 constexpr uint8_t PIN_KEY2_LEFT = 5;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 40;
+constexpr uint32_t BUTTON_LONG_PRESS_MS = 900;
 constexpr uint32_t MULTI_CLICK_GAP_MS = 1400;
 constexpr uint32_t MULTI_CLICK_TOTAL_TIMEOUT_MS = 6000;
 constexpr uint32_t BUTTON_RELEASE_TIMEOUT_MS = 10000;
@@ -22,6 +23,7 @@ enum class InputActionType : uint8_t {
   None,
   GoToPage,
   NextPage,
+  NextSubPage,
   RefreshCurrentPage,
   Ambiguous,
 };
@@ -55,6 +57,7 @@ class DirectPageClickCollector {
 uint64_t allButtonWakeMask();
 PhysicalButton buttonFromWakeMask(uint64_t wakeMask);
 InputAction actionFromWakeMask(uint64_t wakeMask);
+InputAction middleButtonActionFromHoldDuration(uint32_t holdMs);
 InputAction directPageActionFromClickCount(uint8_t clickCount, uint8_t pageCount);
 const char* physicalButtonName(PhysicalButton button);
 const char* inputActionName(InputActionType action);
@@ -66,4 +69,5 @@ bool areAllButtonsReleased();
 bool waitForAllButtonsReleased(uint32_t timeoutMs);
 void configureButtonRtcPullups();
 InputAction collectDirectPageClicksFromWake(uint8_t pageCount);
+InputAction collectMiddleButtonActionFromWake();
 #endif

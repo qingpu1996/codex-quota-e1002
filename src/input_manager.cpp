@@ -116,6 +116,13 @@ InputAction actionFromWakeMask(uint64_t wakeMask) {
   return {InputActionType::None, 0, 0};
 }
 
+InputAction middleButtonActionFromHoldDuration(uint32_t holdMs) {
+  if (holdMs >= BUTTON_LONG_PRESS_MS) {
+    return {InputActionType::NextSubPage, 0, 0};
+  }
+  return {InputActionType::NextPage, 0, 0};
+}
+
 InputAction directPageActionFromClickCount(uint8_t clickCount, uint8_t pageCount) {
   if (clickCount >= 1 && clickCount <= pageCount) {
     return {InputActionType::GoToPage, clickCount, clickCount};
@@ -139,6 +146,7 @@ const char* inputActionName(InputActionType action) {
     case InputActionType::None: return "NONE";
     case InputActionType::GoToPage: return "GO_TO_PAGE";
     case InputActionType::NextPage: return "NEXT_PAGE";
+    case InputActionType::NextSubPage: return "NEXT_SUBPAGE";
     case InputActionType::RefreshCurrentPage: return "REFRESH_CURRENT_PAGE";
     case InputActionType::Ambiguous: return "AMBIGUOUS";
   }
@@ -232,5 +240,21 @@ InputAction collectDirectPageClicksFromWake(uint8_t pageCount) {
     feedbackInvalid();
   }
   return action;
+}
+
+InputAction collectMiddleButtonActionFromWake() {
+  const uint32_t start = millis();
+  while (digitalRead(PIN_KEY1_MIDDLE) == LOW && millis() - start < BUTTON_LONG_PRESS_MS) {
+    delay(10);
+  }
+  const uint32_t held = millis() - start;
+  const bool longPress = digitalRead(PIN_KEY1_MIDDLE) == LOW;
+  if (longPress) {
+    Serial1.printf("[INPUT] KEY1 MIDDLE long press hold=%lu ms; trigger before release\n", static_cast<unsigned long>(held));
+    return {InputActionType::NextSubPage, 0, 0};
+  }
+  Serial1.printf("[INPUT] KEY1 MIDDLE short press hold=%lu ms\n", static_cast<unsigned long>(held));
+  delay(BUTTON_DEBOUNCE_MS);
+  return {InputActionType::NextPage, 0, 0};
 }
 #endif

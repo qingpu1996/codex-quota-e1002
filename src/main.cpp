@@ -6,18 +6,19 @@
 #include "battery.h"
 #include "display.h"
 #include "input_manager.h"
+#include "meal_image_client.h"
 #include "page_manager.h"
 #include "power.h"
 #include "provisioning.h"
 #include "quota_client.h"
 
-static constexpr const char* FIRMWARE_VERSION = "codex-e1002-quota-0.4.1";
+static constexpr const char* FIRMWARE_VERSION = "codex-e1002-quota-0.5.0";
 static constexpr int kDbgRx = 44;
 static constexpr int kDbgTx = 43;
 static constexpr uint32_t kWifiConnectTimeoutMs = 15000;
 static constexpr uint32_t kConfigPortalHoldMs = 1200;
 static constexpr uint32_t kPersistentMagic = 0xE1002C0DUL;
-static constexpr uint16_t kPersistentVersion = 1;
+static constexpr uint16_t kPersistentVersion = 2;
 
 struct PersistentUiState {
   uint32_t magic;
@@ -29,6 +30,8 @@ struct PersistentUiState {
   uint16_t consecutiveFailures;
   bool hasRenderedValidData;
   bool hasRenderedSetupError;
+  uint8_t currentMealSlot;
+  uint8_t lastMealSlotCount;
 };
 
 RTC_DATA_ATTR PersistentUiState uiState;
@@ -38,6 +41,8 @@ static void resetPersistentState() {
   uiState.magic = kPersistentMagic;
   uiState.version = kPersistentVersion;
   uiState.currentPageSlot = PageManager::kDefaultSlot;
+  uiState.currentMealSlot = 1;
+  uiState.lastMealSlotCount = 4;
 }
 
 static bool connectWifi(const DeviceSettings& settings) {
@@ -76,6 +81,17 @@ static void logPayloadSummary(const QuotaPayload& payload) {
                    payload.windows[i].remainingPercent,
                    payload.windows[i].resetText);
   }
+}
+
+static void logMealSummary(const MealImageMeta& meta) {
+  Serial1.printf("[meal] date      : %s %s\n", meta.date, meta.weekday);
+  Serial1.printf("[meal] slot      : M%u/%u title=%s\n",
+                 static_cast<unsigned>(meta.slot),
+                 static_cast<unsigned>(meta.slotCount),
+                 meta.mealTitle);
+  Serial1.printf("[meal] raw bytes : %u hash=%.12s\n",
+                 static_cast<unsigned>(meta.rawBytes),
+                 meta.imageHash);
 }
 
 static uint32_t mixHash(uint32_t hash, uint32_t value) {
@@ -122,6 +138,12 @@ static bool restorePersistentState(PageManager* pages, esp_sleep_wakeup_cause_t 
     Serial1.printf("[state] invalid current page slot=%u; reset to P1\n", static_cast<unsigned>(uiState.currentPageSlot));
     uiState.currentPageSlot = PageManager::kDefaultSlot;
     reset = true;
+  }
+  if (uiState.currentMealSlot == 0) {
+    uiState.currentMealSlot = 1;
+  }
+  if (uiState.lastMealSlotCount == 0) {
+    uiState.lastMealSlotCount = 4;
   }
   pages->goToSlot(uiState.currentPageSlot);
   return reset;
@@ -177,6 +199,9 @@ static RefreshDecision decidePageRefresh(const PageManager& pages,
   if (pages.currentPage().refreshPolicy == RefreshPolicy::Static) {
     return {false, "static page timer skip"};
   }
+  if (reason == RefreshReason::SubPageNavigation) {
+    return {true, "subpage navigation"};
+  }
   if (!uiState.hasRenderedValidData) {
     return {true, "first valid page"};
   }
@@ -187,6 +212,43 @@ static RefreshDecision decidePageRefresh(const PageManager& pages,
     return {true, "hourly forced refresh"};
   }
   return {false, "display hash unchanged"};
+}
+
+static uint8_t nextMealSlot(uint8_t current, uint8_t count) {
+  const uint8_t safeCount = count == 0 ? 1 : count;
+  const uint8_t safeCurrent = current == 0 ? 1 : current;
+  return safeCurrent >= safeCount ? 1 : static_cast<uint8_t>(safeCurrent + 1);
+}
+
+static void formatMealIndicator(char* out, size_t outSize) {
+  if (!out || outSize == 0) {
+    return;
+  }
+  snprintf(out, outSize, "M%u/%u",
+           static_cast<unsigned>(uiState.currentMealSlot == 0 ? 1 : uiState.currentMealSlot),
+           static_cast<unsigned>(uiState.lastMealSlotCount == 0 ? 1 : uiState.lastMealSlotCount));
+}
+
+static void renderMealFailureAndSleep(const PageManager& pages,
+                                      const BatteryStatus& battery,
+                                      const char* category) {
+  if (uiState.hasRenderedValidData && uiState.lastDisplayedPageSlot == pages.currentSlot()) {
+    Serial1.printf("[meal] failure   : %s; keeping current meal image\n", category);
+    uiState.currentPageSlot = pages.currentSlot();
+    uiState.cyclesSinceRender++;
+    enterDeepSleep();
+  }
+
+  char subIndicator[12];
+  formatMealIndicator(subIndicator, sizeof(subIndicator));
+  PageRenderData renderData{nullptr, nullptr, 0, category, subIndicator};
+  pages.refreshCurrentPage(renderData, battery);
+  uiState.currentPageSlot = pages.currentSlot();
+  uiState.lastDisplayedPageSlot = pages.currentSlot();
+  uiState.lastDisplayedContentHash = 0;
+  uiState.cyclesSinceRender = 0;
+  uiState.hasRenderedValidData = true;
+  enterDeepSleep();
 }
 
 static void logAction(const InputAction& action) {
@@ -256,14 +318,18 @@ void setup() {
         reason = RefreshReason::DirectNavigation;
       }
     } else {
-      action = actionFromWakeMask(wakeMask);
+      action = physicalButton == PhysicalButton::Key1Middle ? collectMiddleButtonActionFromWake() : actionFromWakeMask(wakeMask);
       if (physicalButton == PhysicalButton::Key0Green) {
         reason = RefreshReason::ManualRefresh;
-      } else if (physicalButton == PhysicalButton::Key1Middle) {
+      } else if (physicalButton == PhysicalButton::Key1Middle && action.type == InputActionType::NextPage) {
         reason = RefreshReason::NextNavigation;
+      } else if (physicalButton == PhysicalButton::Key1Middle && action.type == InputActionType::NextSubPage) {
+        reason = RefreshReason::SubPageNavigation;
       }
-      waitForAllButtonsReleased(BUTTON_RELEASE_TIMEOUT_MS);
-      delay(BUTTON_DEBOUNCE_MS);
+      if (action.type != InputActionType::NextSubPage) {
+        waitForAllButtonsReleased(BUTTON_RELEASE_TIMEOUT_MS);
+        delay(BUTTON_DEBOUNCE_MS);
+      }
     }
   } else if (!coldBootLike && wakeCause == ESP_SLEEP_WAKEUP_TIMER) {
     reason = RefreshReason::Timer;
@@ -303,6 +369,13 @@ void setup() {
     const uint8_t before = pages.currentSlot();
     pages.nextPage();
     pageChanged = pages.currentSlot() != before;
+  } else if (action.type == InputActionType::NextSubPage) {
+    if (pages.currentPage().id == PageId::TodayMeal) {
+      uiState.currentMealSlot = nextMealSlot(uiState.currentMealSlot, uiState.lastMealSlotCount);
+    } else {
+      Serial1.println("[INPUT] subpage action ignored on page without subpages");
+      reason = RefreshReason::Timer;
+    }
   } else if (action.type == InputActionType::GoToPage && action.targetPageSlot > 0) {
     const uint8_t before = pages.currentSlot();
     if (pages.isValidSlot(action.targetPageSlot)) {
@@ -315,6 +388,10 @@ void setup() {
 
   char indicator[12];
   pages.formatPageIndicator(indicator, sizeof(indicator));
+  char subIndicator[12] = "";
+  if (pages.currentPage().id == PageId::TodayMeal) {
+    formatMealIndicator(subIndicator, sizeof(subIndicator));
+  }
   Serial1.printf("[NAV] P%u -> P%u reason=%s\n",
                  static_cast<unsigned>(fromSlot),
                  static_cast<unsigned>(pages.currentSlot()),
@@ -323,6 +400,9 @@ void setup() {
                  pageIdName(pages.currentPage().id),
                  refreshPolicyName(pages.currentPage().refreshPolicy),
                  indicator);
+  if (subIndicator[0] != '\0') {
+    Serial1.printf("[PAGE] sub       : %s\n", subIndicator);
+  }
 
   const BatteryStatus battery = readBatteryStatus();
   logBatterySummary(battery);
@@ -332,12 +412,18 @@ void setup() {
 
   QuotaPayload payload{};
   QuotaPayload* payloadPtr = nullptr;
+  MealImageMeta mealMeta{};
+  MealImageMeta* mealMetaPtr = nullptr;
+  bool wifiStillOn = false;
   if (needsWifi) {
     if (!hasSettings) {
       startProvisioningAndSleep(settings, "missing-config");
     }
     bool wifiConnected = connectWifi(settings);
     if (!wifiConnected) {
+      if (pages.currentPage().id == PageId::TodayMeal) {
+        renderMealFailureAndSleep(pages, battery, "wifi");
+      }
       if (!uiState.hasRenderedValidData) {
         shutdownWifi();
         startProvisioningAndSleep(settings, "wifi-failed");
@@ -347,28 +433,45 @@ void setup() {
       enterDeepSleep();
     }
 
-    FetchResult fetched = fetchQuotaPayload(settings.quotaApiUrl);
-    shutdownWifi();
+    if (pages.currentPage().id == PageId::CodexQuota) {
+      FetchResult fetched = fetchQuotaPayload(settings.quotaApiUrl);
+      shutdownWifi();
 
-    if (!fetched.ok) {
-      const char* category = fetched.httpStatus == 0 ? quotaErrorName(fetched.error) : "api";
-      if (!uiState.hasRenderedValidData && fetched.error == QuotaError::MissingField) {
-        startProvisioningAndSleep(settings, "api-config");
+      if (!fetched.ok) {
+        const char* category = fetched.httpStatus == 0 ? quotaErrorName(fetched.error) : "api";
+        if (!uiState.hasRenderedValidData && fetched.error == QuotaError::MissingField) {
+          startProvisioningAndSleep(settings, "api-config");
+        }
+        handleFailure(category);
+        enterDeepSleep();
       }
-      handleFailure(category);
-      enterDeepSleep();
-    }
 
-    uiState.consecutiveFailures = 0;
-    uiState.hasRenderedSetupError = false;
-    payload = fetched.payload;
-    payloadPtr = &payload;
-    logPayloadSummary(payload);
+      uiState.consecutiveFailures = 0;
+      uiState.hasRenderedSetupError = false;
+      payload = fetched.payload;
+      payloadPtr = &payload;
+      logPayloadSummary(payload);
+    } else if (pages.currentPage().id == PageId::TodayMeal) {
+      FetchMealMetaResult fetched = fetchMealImageMeta(settings.quotaApiUrl, uiState.currentMealSlot);
+      if (!fetched.ok) {
+        shutdownWifi();
+        renderMealFailureAndSleep(pages, battery, mealImageErrorName(fetched.error));
+      }
+      wifiStillOn = true;
+      uiState.currentMealSlot = fetched.meta.slot;
+      uiState.lastMealSlotCount = fetched.meta.slotCount;
+      formatMealIndicator(subIndicator, sizeof(subIndicator));
+      mealMeta = fetched.meta;
+      mealMetaPtr = &mealMeta;
+      logMealSummary(mealMeta);
+    }
   }
 
   uint32_t pagePayloadHash = 0;
   if (pages.currentPage().id == PageId::CodexQuota && payloadPtr) {
     pagePayloadHash = quotaRenderHash(*payloadPtr);
+  } else if (pages.currentPage().id == PageId::TodayMeal && mealMetaPtr) {
+    pagePayloadHash = mealImageMetaHash(*mealMetaPtr);
   } else if (pages.currentPage().id == PageId::TodayMeal) {
     pagePayloadHash = mealPlaceholderHash();
   }
@@ -382,13 +485,43 @@ void setup() {
   Serial1.printf("[render] decision : %s (%s)\n", decision.shouldRefresh ? "refresh" : "skip", decision.reason);
 
   if (decision.shouldRefresh) {
-    pages.refreshCurrentPage(payloadPtr, battery);
+    uint8_t* mealImage = nullptr;
+    const char* mealError = nullptr;
+    if (pages.currentPage().id == PageId::TodayMeal) {
+      mealImage = static_cast<uint8_t*>(ps_malloc(kMealImageBytes));
+      if (!mealImage) {
+        if (wifiStillOn) {
+          shutdownWifi();
+          wifiStillOn = false;
+        }
+        renderMealFailureAndSleep(pages, battery, "no-psram");
+      }
+      FetchMealRawResult raw = fetchMealImageRaw4bpp(settings.quotaApiUrl, uiState.currentMealSlot, mealImage, kMealImageBytes);
+      if (wifiStillOn) {
+        shutdownWifi();
+        wifiStillOn = false;
+      }
+      if (!raw.ok) {
+        free(mealImage);
+        renderMealFailureAndSleep(pages, battery, mealImageErrorName(raw.error));
+      }
+      Serial1.printf("[meal] raw bytes : %u\n", static_cast<unsigned>(raw.bytesRead));
+    }
+    PageRenderData renderData{payloadPtr, mealImage, mealImage ? kMealImageBytes : 0, mealError, subIndicator};
+    pages.refreshCurrentPage(renderData, battery);
+    if (mealImage) {
+      free(mealImage);
+    }
     uiState.currentPageSlot = pages.currentSlot();
     uiState.lastDisplayedContentHash = pageHash;
     uiState.lastDisplayedPageSlot = pages.currentSlot();
     uiState.cyclesSinceRender = 0;
     uiState.hasRenderedValidData = true;
   } else {
+    if (wifiStillOn) {
+      shutdownWifi();
+      wifiStillOn = false;
+    }
     uiState.currentPageSlot = pageChanged ? fromSlot : pages.currentSlot();
     uiState.cyclesSinceRender++;
   }

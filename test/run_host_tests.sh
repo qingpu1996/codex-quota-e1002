@@ -16,6 +16,7 @@ c++ -std=c++17 \
   -I "$ARDUINOJSON_DIR" \
   src/battery.cpp \
   src/input_manager.cpp \
+  src/meal_image_client.cpp \
   src/page_manager.cpp \
   src/provisioning.cpp \
   src/quota_client.cpp \
