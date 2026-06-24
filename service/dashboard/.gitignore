@@ -1,0 +1,26 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Generated protocol snapshots and local previews
+generated/
+preview/
+
+# Local config, secrets, and logs
+.env
+.env.*
+*.local
+*.log
+logs/
+config.json
+cache.json
+
+# macOS and editor noise
+.DS_Store
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.bak

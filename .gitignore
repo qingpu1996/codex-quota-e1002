@@ -1,0 +1,27 @@
+# macOS and editor noise
+.DS_Store
+.vscode/
+.idea/
+
+# Local secrets and config
+.env
+.env.*
+*.local
+*.log
+logs/
+
+# Service build/dependencies/local artifacts
+service/dashboard/node_modules/
+service/dashboard/dist/
+service/dashboard/generated/
+service/dashboard/preview/
+service/dashboard/config.json
+service/dashboard/cache.json
+
+# Firmware build/dependencies/local secrets
+firmware/e1002/.pio/
+firmware/e1002/include/secrets.h
+
+# Temporary files
+*.tmp
+*.bak

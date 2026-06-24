@@ -318,7 +318,7 @@ static void test_page_switch_requires_refresh_by_page_change() {
 static void test_provisioning_accepts_valid_fields() {
   ProvisioningError error = ProvisioningError::None;
   assert(validateProvisioningFields("Home24", "password123",
-                                    "http://192.168.5.156:19527/api/device/abc123",
+                                    "http://192.0.2.10:19527/api/device/abc123",
                                     &error));
   assert(error == ProvisioningError::None);
 }
@@ -326,7 +326,7 @@ static void test_provisioning_accepts_valid_fields() {
 static void test_provisioning_rejects_missing_ssid() {
   ProvisioningError error = ProvisioningError::None;
   assert(!validateProvisioningFields("", "password123",
-                                     "http://192.168.5.156:19527/api/device/abc123",
+                                     "http://192.0.2.10:19527/api/device/abc123",
                                      &error));
   assert(error == ProvisioningError::MissingSsid);
 }
@@ -342,7 +342,7 @@ static void test_provisioning_rejects_https_api() {
 static void test_provisioning_rejects_non_device_api() {
   ProvisioningError error = ProvisioningError::None;
   assert(!validateProvisioningFields("Home24", "password123",
-                                     "http://192.168.5.156:19527/",
+                                     "http://192.0.2.10:19527/",
                                      &error));
   assert(error == ProvisioningError::ApiUrlPath);
 }
@@ -353,15 +353,15 @@ static void test_provisioning_rejects_long_password() {
   password[sizeof(password) - 1] = '\0';
   ProvisioningError error = ProvisioningError::None;
   assert(!validateProvisioningFields("Home24", password,
-                                     "http://192.168.5.156:19527/api/device/abc123",
+                                     "http://192.0.2.10:19527/api/device/abc123",
                                      &error));
   assert(error == ProvisioningError::PasswordTooLong);
 }
 
 static void test_format_api_target_hides_path_and_token() {
   char target[80];
-  formatApiTarget("http://192.168.5.156:19527/api/device/very-secret-token", target, sizeof(target));
-  assert(strcmp(target, "192.168.5.156:19527") == 0);
+  formatApiTarget("http://192.0.2.10:19527/api/device/example-device-token", target, sizeof(target));
+  assert(strcmp(target, "192.0.2.10:19527") == 0);
 }
 
 static void test_copy_provisioning_string_rejects_truncation() {
@@ -407,9 +407,9 @@ static void test_battery_hash_uses_displayed_label() {
 
 static void test_meal_endpoint_url_builder() {
   char url[288];
-  assert(buildMealEndpointUrl("http://192.168.5.156:19527/api/device/secret-token", "meal/today", url, sizeof(url)));
-  assert(strcmp(url, "http://192.168.5.156:19527/api/device/secret-token/meal/today") == 0);
-  assert(!buildMealEndpointUrl("http://192.168.5.156:19527/e1002/token", "meal/today", url, sizeof(url)));
+  assert(buildMealEndpointUrl("http://192.0.2.10:19527/api/device/example-device-token", "meal/today", url, sizeof(url)));
+  assert(strcmp(url, "http://192.0.2.10:19527/api/device/example-device-token/meal/today") == 0);
+  assert(!buildMealEndpointUrl("http://192.0.2.10:19527/e1002/token", "meal/today", url, sizeof(url)));
 }
 
 static void test_meal_meta_parses_valid_json() {

@@ -1,0 +1,27 @@
+{
+  "name": "codex-quota-dashboard",
+  "version": "1.0.0",
+  "description": "LAN-only Codex quota dashboard for SenseCraft E1002 iframe widgets.",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "preview": "npm run build && node dist/src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/yauzl": "^3.4.0",
+    "playwright": "^1.61.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.9.3",
+    "sharp": "^0.35.2",
+    "yauzl": "^3.4.0"
+  }
+}
