@@ -3,6 +3,7 @@
 #include <string.h>
 #include "esp_sleep.h"
 
+#include "battery.h"
 #include "display.h"
 #include "input_manager.h"
 #include "page_manager.h"
@@ -10,7 +11,7 @@
 #include "provisioning.h"
 #include "quota_client.h"
 
-static constexpr const char* FIRMWARE_VERSION = "codex-e1002-quota-0.4.0";
+static constexpr const char* FIRMWARE_VERSION = "codex-e1002-quota-0.4.1";
 static constexpr int kDbgRx = 44;
 static constexpr int kDbgTx = 43;
 static constexpr uint32_t kWifiConnectTimeoutMs = 15000;
@@ -75,6 +76,20 @@ static void logPayloadSummary(const QuotaPayload& payload) {
                    payload.windows[i].remainingPercent,
                    payload.windows[i].resetText);
   }
+}
+
+static uint32_t mixHash(uint32_t hash, uint32_t value) {
+  return hash ^ (value + 0x9e3779b9UL + (hash << 6) + (hash >> 2));
+}
+
+static void logBatterySummary(const BatteryStatus& battery) {
+  if (!battery.valid) {
+    Serial1.printf("[battery] invalid   : %u mV\n", static_cast<unsigned>(battery.millivolts));
+    return;
+  }
+  Serial1.printf("[battery] level     : %u mV %u%%\n",
+                 static_cast<unsigned>(battery.millivolts),
+                 static_cast<unsigned>(battery.percent));
 }
 
 static void handleFailure(const char* category) {
@@ -309,6 +324,9 @@ void setup() {
                  refreshPolicyName(pages.currentPage().refreshPolicy),
                  indicator);
 
+  const BatteryStatus battery = readBatteryStatus();
+  logBatterySummary(battery);
+
   const bool needsWifi = shouldUseWifi(pages, reason, action.type, pageChanged, coldBootLike, ambiguousInput);
   Serial1.printf("[NET] connect Wi-Fi=%s\n", needsWifi ? "yes" : "no");
 
@@ -354,6 +372,7 @@ void setup() {
   } else if (pages.currentPage().id == PageId::TodayMeal) {
     pagePayloadHash = mealPlaceholderHash();
   }
+  pagePayloadHash = mixHash(pagePayloadHash, batteryRenderHash(battery));
   const uint32_t pageHash = pages.currentPageContentHash(pagePayloadHash, indicator);
   RefreshDecision decision = ambiguousInput ?
     RefreshDecision{false, "ambiguous input"} :
@@ -363,7 +382,7 @@ void setup() {
   Serial1.printf("[render] decision : %s (%s)\n", decision.shouldRefresh ? "refresh" : "skip", decision.reason);
 
   if (decision.shouldRefresh) {
-    pages.refreshCurrentPage(payloadPtr);
+    pages.refreshCurrentPage(payloadPtr, battery);
     uiState.currentPageSlot = pages.currentSlot();
     uiState.lastDisplayedContentHash = pageHash;
     uiState.lastDisplayedPageSlot = pages.currentSlot();

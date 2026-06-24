@@ -20,6 +20,13 @@ static uint16_t percentColor(int percent) {
   return TFT_RED;
 }
 
+static uint16_t batteryColor(const BatteryStatus& battery) {
+  if (!battery.valid) {
+    return TFT_BLACK;
+  }
+  return percentColor(battery.percent);
+}
+
 static void text(const char* value, int x, int y, int size, uint16_t color, uint8_t datum = TL_DATUM) {
   epaper.setTextDatum(datum);
   epaper.setTextColor(color, TFT_WHITE);
@@ -63,15 +70,19 @@ static void drawEmptyCard(int x, int y, int w, int h) {
   centered("NO WINDOW", x + w / 2, y + h / 2, 3, TFT_RED);
 }
 
-static void drawFooter(const char* pageIndicator) {
+static void drawFooter(const char* pageIndicator, const BatteryStatus& battery) {
+  char batteryLabel[16];
+  formatBatteryLabel(battery, batteryLabel, sizeof(batteryLabel));
+
   epaper.drawLine(20, 416, 780, 416, TFT_BLACK);
   text("LEFT:N=PAGE", 34, 432, 2, TFT_BLACK);
   text("MID:NEXT", 220, 432, 2, TFT_BLACK);
   text("GREEN:REFRESH", 370, 432, 2, TFT_BLACK);
+  text(batteryLabel, 700, 432, 2, batteryColor(battery), TR_DATUM);
   text(pageIndicator, 766, 432, 2, TFT_BLACK, TR_DATUM);
 }
 
-void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator) {
+void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator, const BatteryStatus& battery) {
   epaper.begin();
   epaper.fillScreen(TFT_WHITE);
 
@@ -100,7 +111,7 @@ void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator) {
     drawEmptyCard(416, cardY, cardW, cardH);
   }
 
-  drawFooter(pageIndicator);
+  drawFooter(pageIndicator, battery);
 
   Serial1.println("[display] update start");
   Serial1.flush();
@@ -110,7 +121,7 @@ void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator) {
   epaper.sleep();
 }
 
-void renderTodayMealPage(const char* pageIndicator) {
+void renderTodayMealPage(const char* pageIndicator, const BatteryStatus& battery) {
   epaper.begin();
   epaper.fillScreen(TFT_WHITE);
 
@@ -125,7 +136,7 @@ void renderTodayMealPage(const char* pageIndicator) {
   centered("NOT CONFIGURED", 400, 235, 6, TFT_RED);
   centered("MEAL DATA WILL BE ADDED NEXT", 400, 320, 2, TFT_BLACK);
 
-  drawFooter(pageIndicator);
+  drawFooter(pageIndicator, battery);
 
   Serial1.println("[display] meal placeholder update start");
   Serial1.flush();

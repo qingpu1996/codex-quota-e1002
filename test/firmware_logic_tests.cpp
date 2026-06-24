@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "battery.h"
 #include "input_manager.h"
 #include "page_manager.h"
 #include "provisioning.h"
@@ -332,6 +333,41 @@ static void test_copy_provisioning_string_rejects_truncation() {
   assert(strcmp(dest, "abc") == 0);
 }
 
+static void test_battery_percent_curve_points() {
+  assert(batteryPercentFromMillivolts(4150) == 100);
+  assert(batteryPercentFromMillivolts(3750) == 50);
+  assert(batteryPercentFromMillivolts(3270) == 0);
+}
+
+static void test_battery_percent_clamps() {
+  assert(batteryPercentFromMillivolts(4300) == 100);
+  assert(batteryPercentFromMillivolts(3000) == 0);
+}
+
+static void test_battery_percent_interpolates() {
+  assert(batteryPercentFromMillivolts(3775) == 55);
+  assert(batteryPercentFromMillivolts(3290) == 3);
+}
+
+static void test_battery_label_formats() {
+  char label[16];
+  BatteryStatus ok{true, 3900, 78};
+  formatBatteryLabel(ok, label, sizeof(label));
+  assert(strcmp(label, "BAT 78%") == 0);
+
+  BatteryStatus invalid{false, 0, 0};
+  formatBatteryLabel(invalid, label, sizeof(label));
+  assert(strcmp(label, "BAT --%") == 0);
+}
+
+static void test_battery_hash_uses_displayed_label() {
+  BatteryStatus a{true, 3900, 78};
+  BatteryStatus b{true, 3890, 78};
+  BatteryStatus c{true, 3890, 77};
+  assert(batteryRenderHash(a) == batteryRenderHash(b));
+  assert(batteryRenderHash(a) != batteryRenderHash(c));
+}
+
 int main() {
   test_normal_json();
   test_schema_wrong();
@@ -372,6 +408,11 @@ int main() {
   test_provisioning_rejects_long_password();
   test_format_api_target_hides_path_and_token();
   test_copy_provisioning_string_rejects_truncation();
+  test_battery_percent_curve_points();
+  test_battery_percent_clamps();
+  test_battery_percent_interpolates();
+  test_battery_label_formats();
+  test_battery_hash_uses_displayed_label();
   puts("firmware logic tests passed");
   return 0;
 }

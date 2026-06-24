@@ -94,23 +94,23 @@ uint32_t PageManager::pageContentHash(uint8_t slot, uint32_t pagePayloadHash, co
 }
 
 #ifndef QUOTA_HOST_TEST
-void PageManager::renderCurrentPage(const QuotaPayload* payload) const {
+void PageManager::renderCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const {
   char indicator[12];
   formatPageIndicator(indicator, sizeof(indicator));
   switch (currentPage().id) {
     case PageId::CodexQuota:
       if (payload) {
-        renderQuotaPage(*payload, indicator);
+        renderQuotaPage(*payload, indicator, battery);
       }
       break;
     case PageId::TodayMeal:
-      renderTodayMealPage(indicator);
+      renderTodayMealPage(indicator, battery);
       break;
   }
 }
 
-void PageManager::refreshCurrentPage(const QuotaPayload* payload) const {
-  renderCurrentPage(payload);
+void PageManager::refreshCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const {
+  renderCurrentPage(payload, battery);
 }
 #endif
 

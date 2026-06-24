@@ -59,8 +59,12 @@ Left x3 -> invalid, keep the current page
 The bottom footer uses:
 
 ```text
-LEFT:N=PAGE    MID:NEXT    GREEN:REFRESH    Pn/total
+LEFT:N=PAGE    MID:NEXT    GREEN:REFRESH    BAT xx%    Pn/total
 ```
+
+`BAT xx%` is read locally from the E1002 battery monitor. The firmware enables the battery measurement circuit on `GPIO21`, samples the battery ADC on `GPIO1`, applies the board voltage-divider compensation, and maps voltage to percent with the Seeed reTerminal E Series calibration curve. If the reading is outside the plausible range, the footer shows `BAT --%`.
+
+Hardware reference: https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome_advanced/
 
 ## Refresh Policies
 

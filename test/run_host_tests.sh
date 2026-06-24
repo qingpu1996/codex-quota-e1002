@@ -14,6 +14,7 @@ c++ -std=c++17 \
   -I src \
   -I include \
   -I "$ARDUINOJSON_DIR" \
+  src/battery.cpp \
   src/input_manager.cpp \
   src/page_manager.cpp \
   src/provisioning.cpp \

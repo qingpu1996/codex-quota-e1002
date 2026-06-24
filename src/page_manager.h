@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "battery.h"
 #include "quota_client.h"
 
 enum class PageId : uint8_t {
@@ -49,8 +50,8 @@ class PageManager {
   uint32_t pageContentHash(uint8_t slot, uint32_t pagePayloadHash, const char* indicator) const;
 
 #ifndef QUOTA_HOST_TEST
-  void renderCurrentPage(const QuotaPayload* payload) const;
-  void refreshCurrentPage(const QuotaPayload* payload) const;
+  void renderCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const;
+  void refreshCurrentPage(const QuotaPayload* payload, const BatteryStatus& battery) const;
 #endif
 
   static const PageDescriptor* registry();

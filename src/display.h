@@ -1,9 +1,10 @@
 #pragma once
 
+#include "battery.h"
 #include "quota_client.h"
 
-void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator);
-void renderTodayMealPage(const char* pageIndicator);
+void renderQuotaPage(const QuotaPayload& payload, const char* pageIndicator, const BatteryStatus& battery);
+void renderTodayMealPage(const char* pageIndicator, const BatteryStatus& battery);
 void renderSetupError(const char* category);
 void renderWifiSetupPage(const char* apSsid, const char* apPassword, const char* setupUrl, const char* reason);
 void renderProvisioningSavedPage();
