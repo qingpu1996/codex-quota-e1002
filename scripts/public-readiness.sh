@@ -30,7 +30,7 @@ if git ls-files | grep -E '(^|/)(node_modules|dist|\.pio|\.local)(/|$)' >/dev/nu
   failed=1
 fi
 
-if git grep -nI -E 'sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AIza[0-9A-Za-z_-]{20,}|api/device/[0-9a-f]{32,}|admin/[0-9a-f]{32,}|/Users/nihplod' -- . ':!service/dashboard/package-lock.json' ':!README.md' ':!service/dashboard/README.md' ':!firmware/e1002/README.md' >/tmp/codex-e1002-secret-scan.txt; then
+if git grep -nI -E 'sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AIza[0-9A-Za-z_-]{20,}|api/device/[0-9a-f]{32,}|admin/[0-9a-f]{32,}|/Users/nihplod' -- . ':!scripts/public-readiness.sh' ':!service/dashboard/package-lock.json' ':!README.md' ':!service/dashboard/README.md' ':!firmware/e1002/README.md' >/tmp/codex-e1002-secret-scan.txt; then
   echo "potential secret or machine-local value in tracked source:" >&2
   cat /tmp/codex-e1002-secret-scan.txt >&2
   failed=1
