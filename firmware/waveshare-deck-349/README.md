@@ -29,7 +29,7 @@ LCD_TE=GPIO21
 LCD_RESET=TCA9554 IO expander
 Audio board=S3_LCD_3_49
 Audio input codec=ES7210
-Audio output codec=ES8311
+Audio output codec=ES8311 hardware present, Stage F output disabled by default
 Audio I2S=TDM
 Audio sample=24000 Hz / 16-bit / 2ch
 Audio I2C sda=47 scl=48
@@ -58,7 +58,7 @@ Audio I2S mclk=7 bclk=15 ws=46 din=6 dout=45
 - 每 3 秒轮询 active job。
 - 固定英文 UI 文案继续使用 LVGL 内置 Montserrat 字体。
 - TRANSCRIPT 和 CODEX REPLY 页面使用自定义 `codex_deck_cjk_16` 中文字体。
-- 中文字体已通过实机验证；正常启动不再显示字体测试页。
+- 中文字体显示能力保留；当前默认 `deck` 子集需要结合实际 transcript/reply 样本持续补字，正常启动不再显示字体测试页。
 - `TAP TO RECORD` 开始录音，`TAP TO STOP` 停止录音。
 - 录音格式：PCM WAV，24kHz，16-bit，2ch，最长 15 秒，最短 300ms。
 - `POST /api/deck/<deckToken>/audio/utterance?slotId=<slotId>`。
@@ -119,6 +119,8 @@ scripts/flash.sh
 scripts/monitor.sh
 scripts/clean.sh
 scripts/serial-port.sh
+scripts/size-report.sh
+scripts/generate-cjk-font.sh
 scripts/test-audio-contract.sh
 ```
 
@@ -139,9 +141,23 @@ cd firmware/waveshare-deck-349
 scripts/generate-cjk-font.sh
 ```
 
+默认生成 `deck` 子集 profile：
+
+```bash
+scripts/generate-cjk-font.sh deck
+```
+
+回滚到完整 CJK 基本区 profile：
+
+```bash
+scripts/generate-cjk-font.sh full
+```
+
 来源：当前 PlatformIO `lvgl@9.3.0` 包内的 `SourceHanSansSC-Normal.otf`。许可证随 LVGL 包中的 Source Han Sans SC font license，为 SIL Open Font License 1.1。仓库提交的是生成后的 LVGL C 字体文件，没有提交原始 OTF，也没有使用 macOS 系统字体。
 
-覆盖范围：ASCII `0x20-0x7E`、Latin-1 `0x00A0-0x00FF`、General Punctuation `0x2000-0x206F`、CJK 标点 `0x3000-0x303F`、全角 ASCII/标点 `0xFF00-0xFFEF`、CJK Unified Ideographs 基本区 `0x4E00-0x9FA5`。字号 16px，1bpp，不含 kerning。该范围覆盖测试句中的 `弗/斯/项/检/按/键/逻/辑/语/转/确/认/发/给`，也覆盖模型回复里常见的弯引号 `“”`、破折号 `—`、省略号 `…` 和绝大多数常见简体中文 transcript/reply。
+当前提交的字体是 `deck` 子集：ASCII `0x20-0x7E`、Latin-1 `0x00A0-0x00FF`、General Punctuation `0x2000-0x206F`、CJK 标点 `0x3000-0x303F`、全角 ASCII/标点 `0xFF00-0xFFEF`，再加 `src/fonts/codex_deck_cjk_chars.txt` 维护的常用简体中文、Stage F UI/协议/状态用字和 Codex reply 高频字词。字号 16px，1bpp，不含 kerning，未启用 LVGL compressed font。实测 `full` profile 生成的 C 源约 `6157223 bytes`，`deck` profile 为 `784525 bytes`。
+
+已测试 4bpp RLE compressed 子集：build 可通过，但 release `firmware.bin` 为 `1561776 bytes`，比当前 1bpp 未压缩子集大 `167728 bytes`，所以默认保留 1bpp 未压缩。若后续 transcript/reply 样本出现缺字，应优先把字符追加到 `codex_deck_cjk_chars.txt` 并重新生成；需要完全覆盖时再用 `full` profile。
 
 ## AP Setup
 
@@ -187,17 +203,44 @@ cd firmware/waveshare-deck-349
 scripts/build.sh
 ```
 
-当前 Stage F 验证结果：
+默认 env `waveshare_deck_349` 保留串口排查用 verbose 日志。release env 关闭 verbose INFO 日志并降低 core log level：
 
-```text
-RAM:   126512 / 327680 bytes, 38.6%
-Flash: 2221959 / 3145728 bytes, 70.6%
-firmware.bin: 2222368 bytes
+```bash
+scripts/build.sh waveshare_deck_349
+scripts/build.sh waveshare_deck_349_release
+scripts/size-report.sh waveshare_deck_349
+scripts/size-report.sh waveshare_deck_349_release
 ```
 
-全量基本区自定义 CJK 字体会显著增加 Flash，但仍在当前 app 分区内。相比上一版 LVGL 内置 CJK 方案，Flash 增加约 `537000 bytes`，换来 CJK 基本区 `0x4E00-0x9FA5` 和常见通用标点覆盖；本轮补入 `0x00A0-0x00FF`、`0x2000-0x206F` 后额外增加约 `2.5KB` Flash。
+当前优化后 debug 构建结果：
+
+```text
+RAM:   126016 / 327680 bytes, 38.5%
+Flash: 1406127 / 8388608 bytes, 16.8%
+firmware.bin: 1406528 bytes
+```
+
+当前优化后 release 构建结果：
+
+```text
+RAM:   126016 / 327680 bytes, 38.5%
+Flash: 1393783 / 8388608 bytes, 16.6%
+firmware.bin: 1394192 bytes
+```
+
+相对 baseline `firmware.bin: 2220992 bytes`，release 净减少 `826800 bytes`。详细 baseline、阶段性 size 和 largest symbols 记录见 `docs/deck/FLASH_OPTIMIZATION_REPORT.md`。
 
 构建使用 Seeed PlatformIO 平台包，因为普通 `espressif32@6.12.0` 的 Arduino/ESP-IDF 组合缺少官方 V2 示例需要的新 LCD/I2C API。`platformio.ini` 使用本目录私有 `packages_dir = .pio/packages`，避免污染仓库其他固件。
+
+## Partition Table
+
+`platformio.ini` 当前使用本目录私有 16MB no-OTA 分区表：
+
+```text
+partitions/deck_16m_no_ota.csv
+```
+
+app 分区为 factory `app0`，大小 `0x800000`，即 `8388608 bytes`；剩余主要空间给 `littlefs`，大小 `0x7F0000`。当前 Stage F 不是 OTA 固件；未来需要 OTA 时应新增双 app 分区表，而不是在当前 no-OTA 表上直接叠加。
 
 ## Flash
 
