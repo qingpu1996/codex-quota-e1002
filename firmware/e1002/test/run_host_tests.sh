@@ -17,7 +17,7 @@ python3 -m py_compile scripts/apply_features.py scripts/feature_config.py
 run_tests() {
   local feature_meal="$1"
   local feature_weather="$2"
-  local output="/tmp/codex-quota-e1002-firmware-tests-meal-${feature_meal}-weather-${feature_weather}"
+  local output="/tmp/codex-device-hub-e1002-firmware-tests-meal-${feature_meal}-weather-${feature_weather}"
   local sources=(
     src/battery.cpp
     src/input_manager.cpp

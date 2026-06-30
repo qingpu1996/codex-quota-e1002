@@ -1,4 +1,4 @@
-# codex-quota-dashboard
+# codex-device-hub service
 
 这是运行在 Mac 上的局域网服务，给 reTerminal E1002 固件提供 Codex 额度 JSON、token 用量摘要、今日食谱图片和天气 JSON，同时给 Waveshare Codex Deck 提供 text-only slot 派发、WAV 上传保存、Stage F 本地 STT job 和正式 Codex send API。服务不提供 HTML dashboard，不提供 iframe 页面，也不需要公网入口。
 

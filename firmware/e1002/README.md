@@ -1,4 +1,4 @@
-# codex-quota-e1002-firmware
+# E1002 Firmware
 
 这是 Seeed Studio reTerminal E1002 的自定义 Arduino/PlatformIO 固件。设备从 Mac 局域网服务获取 Codex 额度 JSON，以及可选模块需要的食谱图片、天气 JSON，用 Seeed_GFX 直接绘制到 800 x 480 六色电子纸，然后进入 deep sleep。
 

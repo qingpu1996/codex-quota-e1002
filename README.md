@@ -1,4 +1,4 @@
-# Codex Quota E1002
+# Codex Device Hub
 
 这是 E1002 常显屏和 Codex Deck 共用的本地局域网设备 hub 项目。Mac 上仍然只有一个 `service/dashboard/` 服务：它从当前用户已经登录的 Codex CLI 会话读取额度和用量，整理成脱敏 JSON；可选模块由 Mac 继续处理食谱、天气等数据源；Deck 侧提供 text-only Codex 派发、raw WAV 上传、本地 STT job、transcript 确认和正式 Codex send 接口。
 
