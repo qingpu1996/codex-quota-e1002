@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <ctype.h>
 #include <string.h>
+#include "app_config.h"
 #include "esp_log.h"
 
 static const char *TAG = "deck_setup";
@@ -275,7 +276,7 @@ bool runDeckProvisioningPortal(DeckSettings *current, const char *reason)
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIp, gateway, subnet);
   const bool apStarted = WiFi.softAP(kDeckProvisioningApSsid, kDeckProvisioningApPassword);
-  ESP_LOGI(TAG, "setup ap ssid=%s started=%s ip=%s", kDeckProvisioningApSsid, apStarted ? "yes" : "no", WiFi.softAPIP().toString().c_str());
+  DECK_LOGI(TAG, "setup ap ssid=%s started=%s ip=%s", kDeckProvisioningApSsid, apStarted ? "yes" : "no", WiFi.softAPIP().toString().c_str());
 
   dns.start(53, "*", apIp);
 
@@ -322,7 +323,7 @@ bool runDeckProvisioningPortal(DeckSettings *current, const char *reason)
                 F("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                   "<title>Saved</title></head><body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px\">"
                   "<h1>Saved</h1><p>The Codex Deck will reboot and use the new settings.</p></body></html>"));
-    ESP_LOGI(TAG, "setup settings saved; reboot pending");
+    DECK_LOGI(TAG, "setup settings saved; reboot pending");
   });
 
   server.on("/clear", HTTP_POST, [&]() {
@@ -330,7 +331,7 @@ bool runDeckProvisioningPortal(DeckSettings *current, const char *reason)
     memset(&working, 0, sizeof(working));
     lastError = "saved-settings-cleared";
     sendNoStore(server, 200, "text/html", buildPortalPage(working, reason, lastError.c_str(), ssidOptions));
-    ESP_LOGI(TAG, "setup saved settings cleared");
+    DECK_LOGI(TAG, "setup saved settings cleared");
   });
 
   server.on("/generate_204", HTTP_GET, [&]() {

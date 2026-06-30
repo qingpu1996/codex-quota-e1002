@@ -137,14 +137,14 @@ static void deck_ui_event_handler(int slot_index, DeckUiEvent event, void *ctx)
 
 static void log_boot_banner()
 {
-  ESP_LOGI(TAG, "firmware=%s", CODEX_DECK_FIRMWARE_VERSION);
-  ESP_LOGI(TAG, "device=%s", CODEX_DECK_DEVICE_NAME);
-  ESP_LOGI(TAG, "hardware_variant_config=%s", DECK_HARDWARE_VARIANT_TEXT);
-  ESP_LOGI(TAG, "lvgl=%d.%d.%d", lv_version_major(), lv_version_minor(), lv_version_patch());
-  ESP_LOGI(TAG, "screen=%dx%d", DECK_SCREEN_WIDTH, DECK_SCREEN_HEIGHT);
-  ESP_LOGI(TAG, "lcd_te_gpio=%d lcd_rst_gpio=%d", EXAMPLE_PIN_NUM_LCD_TE, EXAMPLE_PIN_NUM_LCD_RST);
-  ESP_LOGI(TAG, "free_heap=%u", static_cast<unsigned>(esp_get_free_heap_size()));
-  ESP_LOGI(TAG, "free_psram=%u", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  DECK_LOGI(TAG, "firmware=%s", CODEX_DECK_FIRMWARE_VERSION);
+  DECK_LOGI(TAG, "device=%s", CODEX_DECK_DEVICE_NAME);
+  DECK_LOGI(TAG, "hardware_variant_config=%s", DECK_HARDWARE_VARIANT_TEXT);
+  DECK_LOGI(TAG, "lvgl=%d.%d.%d", lv_version_major(), lv_version_minor(), lv_version_patch());
+  DECK_LOGI(TAG, "screen=%dx%d", DECK_SCREEN_WIDTH, DECK_SCREEN_HEIGHT);
+  DECK_LOGI(TAG, "lcd_te_gpio=%d lcd_rst_gpio=%d", EXAMPLE_PIN_NUM_LCD_TE, EXAMPLE_PIN_NUM_LCD_RST);
+  DECK_LOGI(TAG, "free_heap=%u", static_cast<unsigned>(esp_get_free_heap_size()));
+  DECK_LOGI(TAG, "free_psram=%u", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
 }
 
 static bool valid_selected_slot()
@@ -262,7 +262,7 @@ static bool refresh_deck()
   if (!g_job_active && !voice_flow_active()) {
     update_idle_footer();
   }
-  ESP_LOGI(TAG, "deck slots updated count=%d codex=%s storage=%s", g_snapshot.slotCount, g_snapshot.codexStatus, g_snapshot.storageStatus);
+  DECK_LOGI(TAG, "deck slots updated count=%d codex=%s storage=%s", g_snapshot.slotCount, g_snapshot.codexStatus, g_snapshot.storageStatus);
   return true;
 }
 
@@ -274,7 +274,7 @@ static void select_slot(int slot_index)
   g_selected_slot_index = slot_index;
   set_ui_selected_slot(g_selected_slot_index);
   update_idle_footer();
-  ESP_LOGI(TAG, "selected slot index=%d id=%s", g_selected_slot_index, selected_slot_id());
+  DECK_LOGI(TAG, "selected slot index=%d id=%s", g_selected_slot_index, selected_slot_id());
 }
 
 static void update_recording_footer(const DeckAudioStats &stats)
@@ -308,7 +308,7 @@ static void start_audio_transcription()
   g_reply_ready = false;
   g_voice_started_ms = millis();
   g_last_job_poll_ms = 0;
-  ESP_LOGI(TAG, "stt job submitted audio=%s stt=%s status=%s", g_current_audio_job_id, g_stt_job.jobId, g_stt_job.status);
+  DECK_LOGI(TAG, "stt job submitted audio=%s stt=%s status=%s", g_current_audio_job_id, g_stt_job.jobId, g_stt_job.status);
 }
 
 static void submit_captured_audio(const DeckAudioStats &stats)
@@ -333,7 +333,7 @@ static void submit_captured_audio(const DeckAudioStats &stats)
            static_cast<unsigned>(stats.durationMs),
            static_cast<unsigned>(wav_len));
   set_ui_footer(footer);
-  ESP_LOGI(TAG, "audio upload start slot=%s wav=%u duration_ms=%u peak=%d rms=%d clipped=%u silence=%d",
+  DECK_LOGI(TAG, "audio upload start slot=%s wav=%u duration_ms=%u peak=%d rms=%d clipped=%u silence=%d",
            selected_slot_id(),
            static_cast<unsigned>(wav_len),
            static_cast<unsigned>(stats.durationMs),
@@ -351,7 +351,7 @@ static void submit_captured_audio(const DeckAudioStats &stats)
     return;
   }
 
-  ESP_LOGI(TAG, "audio upload ok job=%s bytes=%d duration_ms=%d sample_rate=%d channels=%d bits=%d",
+  DECK_LOGI(TAG, "audio upload ok job=%s bytes=%d duration_ms=%d sample_rate=%d channels=%d bits=%d",
            g_audio_upload.jobId,
            g_audio_upload.bytes,
            g_audio_upload.durationMs,
@@ -456,7 +456,7 @@ static void poll_active_job()
     return;
   }
 
-  ESP_LOGI(TAG, "deck job poll job=%s status=%s", g_job.jobId, g_job.status);
+  DECK_LOGI(TAG, "deck job poll job=%s status=%s", g_job.jobId, g_job.status);
   if (is_terminal_job_status(g_job.status)) {
     g_job_active = false;
     refresh_deck();
@@ -496,7 +496,7 @@ static void poll_stt_job()
     return;
   }
 
-  ESP_LOGI(TAG, "stt poll job=%s status=%s transcript_len=%u",
+  DECK_LOGI(TAG, "stt poll job=%s status=%s transcript_len=%u",
            g_stt_job.jobId,
            g_stt_job.status,
            static_cast<unsigned>(strlen(g_stt_job.screenTranscript[0] ? g_stt_job.screenTranscript : g_stt_job.transcript)));
@@ -549,7 +549,7 @@ static void send_confirmed_transcript()
   g_voice_codex_active = true;
   g_voice_started_ms = millis();
   g_last_job_poll_ms = 0;
-  ESP_LOGI(TAG, "codex job submitted slot=%s job=%s source_audio=%s source_stt=%s",
+  DECK_LOGI(TAG, "codex job submitted slot=%s job=%s source_audio=%s source_stt=%s",
            selected_slot_id(), g_job.jobId, g_current_audio_job_id, g_stt_job.jobId);
 }
 
@@ -572,7 +572,7 @@ static void poll_voice_codex_job()
     return;
   }
 
-  ESP_LOGI(TAG, "codex poll job=%s status=%s reply_len=%u",
+  DECK_LOGI(TAG, "codex poll job=%s status=%s reply_len=%u",
            g_job.jobId,
            g_job.status,
            static_cast<unsigned>(strlen(g_job.screenReply)));
@@ -683,9 +683,9 @@ void setup()
     ESP_LOGW(TAG, "audio init failed error=%s", audio_stats.error);
     set_ui_status("AUDIO ERROR", audio_stats.error[0] ? audio_stats.error : "INIT FAILED");
   }
-  ESP_LOGI(TAG, "stage=F stt_codex_ready");
-  ESP_LOGI(TAG, "free_heap_after_init=%u", static_cast<unsigned>(esp_get_free_heap_size()));
-  ESP_LOGI(TAG, "free_psram_after_init=%u", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  DECK_LOGI(TAG, "stage=F stt_codex_ready");
+  DECK_LOGI(TAG, "free_heap_after_init=%u", static_cast<unsigned>(esp_get_free_heap_size()));
+  DECK_LOGI(TAG, "free_psram_after_init=%u", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
 
   if (!loadDeckSettings(&g_settings)) {
     start_setup_portal("missing config");
@@ -701,7 +701,7 @@ void setup()
   }
 
   g_network_ready = true;
-  ESP_LOGI(TAG, "wifi connected ip=%s rssi=%d", g_snapshot.localIp, g_snapshot.wifiRssi);
+  DECK_LOGI(TAG, "wifi connected ip=%s rssi=%d", g_snapshot.localIp, g_snapshot.wifiRssi);
   set_ui_status("WIFI OK", g_snapshot.localIp);
   if (!refresh_deck()) {
     start_setup_portal("deck hub failed");

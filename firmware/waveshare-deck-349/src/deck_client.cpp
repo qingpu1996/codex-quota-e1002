@@ -388,6 +388,7 @@ DeckClientStatus deckFetchSlots(const DeckSettings *settings, DeckSnapshot *snap
   return DeckClientStatus::Ok;
 }
 
+#if DECK_ENABLE_DEBUG_TEXT_CLIENT
 DeckClientStatus deckSubmitTextJob(const DeckSettings *settings, const char *slotId, const char *text, DeckJobSnapshot *job, DeckSnapshot *snapshot)
 {
   if (job) {
@@ -425,6 +426,7 @@ DeckClientStatus deckSubmitTextJob(const DeckSettings *settings, const char *slo
   }
   return DeckClientStatus::Ok;
 }
+#endif
 
 DeckClientStatus deckFetchJob(const DeckSettings *settings, const char *jobId, DeckJobSnapshot *job, DeckSnapshot *snapshot)
 {

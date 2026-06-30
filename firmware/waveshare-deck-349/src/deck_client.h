@@ -72,7 +72,9 @@ const char *deckClientStatusText(DeckClientStatus status);
 DeckClientStatus deckConnectWifi(const DeckSettings *settings, DeckSnapshot *snapshot);
 DeckClientStatus deckFetchHealth(const DeckSettings *settings, DeckSnapshot *snapshot);
 DeckClientStatus deckFetchSlots(const DeckSettings *settings, DeckSnapshot *snapshot);
+#if DECK_ENABLE_DEBUG_TEXT_CLIENT
 DeckClientStatus deckSubmitTextJob(const DeckSettings *settings, const char *slotId, const char *text, DeckJobSnapshot *job, DeckSnapshot *snapshot);
+#endif
 DeckClientStatus deckFetchJob(const DeckSettings *settings, const char *jobId, DeckJobSnapshot *job, DeckSnapshot *snapshot);
 DeckClientStatus deckStartAudioTranscription(const DeckSettings *settings, const char *audioJobId, DeckJobSnapshot *job, DeckSnapshot *snapshot);
 DeckClientStatus deckSubmitCodexSend(

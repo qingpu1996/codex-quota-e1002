@@ -17,6 +17,28 @@
 #define CODEX_DECK_AUDIO_MIN_MS 300
 #define CODEX_DECK_AUDIO_CHUNK_BYTES 4096
 
+#ifndef DECK_VERBOSE_LOGS
+#define DECK_VERBOSE_LOGS 1
+#endif
+
+#ifndef DECK_AUDIO_ENABLE_OUTPUT
+#define DECK_AUDIO_ENABLE_OUTPUT 0
+#endif
+
+#ifndef DECK_ENABLE_SDCARD
+#define DECK_ENABLE_SDCARD 0
+#endif
+
+#ifndef DECK_ENABLE_DEBUG_TEXT_CLIENT
+#define DECK_ENABLE_DEBUG_TEXT_CLIENT 0
+#endif
+
+#if DECK_VERBOSE_LOGS
+#define DECK_LOGI(...) ESP_LOGI(__VA_ARGS__)
+#else
+#define DECK_LOGI(...) do {} while (0)
+#endif
+
 #ifndef DECK_HARDWARE_VARIANT
 #define DECK_HARDWARE_VARIANT 2
 #endif

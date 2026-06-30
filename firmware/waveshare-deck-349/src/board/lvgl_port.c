@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_timer.h"
+#include "app_config.h"
 #include "user_config.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -142,7 +143,7 @@ static void TouchInputReadCallback(lv_indev_t * indev, lv_indev_data_t *indevDat
     {
       last_logged_x = indevData->point.x;
       last_logged_y = indevData->point.y;
-      ESP_LOGI("Touch", "touch x=%d y=%d raw_x=%u raw_y=%u points=%u", indevData->point.x, indevData->point.y, pointX, pointY, buff[1]);
+      DECK_LOGI("Touch", "touch x=%d y=%d raw_x=%u raw_y=%u points=%u", indevData->point.x, indevData->point.y, pointX, pointY, buff[1]);
     }
   }
   else
@@ -249,11 +250,11 @@ void lvgl_port_init(void)
 {
   flush_done_semaphore = xSemaphoreCreateBinary();
   assert(flush_done_semaphore);
-  ESP_LOGI(TAG, "Initialize LCD reset and backlight");
+  DECK_LOGI(TAG, "Initialize LCD reset and backlight");
   example_lcd_pwm_off_early();
   example_lcd_exio_init();
 
-  ESP_LOGI(TAG, "Initialize QSPI bus");
+  DECK_LOGI(TAG, "Initialize QSPI bus");
   spi_bus_config_t buscfg = {};
     buscfg.data0_io_num = EXAMPLE_PIN_NUM_LCD_DATA0;
     buscfg.data1_io_num = EXAMPLE_PIN_NUM_LCD_DATA1;
@@ -263,7 +264,7 @@ void lvgl_port_init(void)
     buscfg.max_transfer_sz = LVGL_DMA_BUFF_LEN;
   ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-  ESP_LOGI(TAG, "Install panel IO");
+  DECK_LOGI(TAG, "Install panel IO");
 	  esp_lcd_panel_io_handle_t panel_io = NULL;
     esp_lcd_panel_handle_t panel = NULL;
 
@@ -291,7 +292,7 @@ void lvgl_port_init(void)
     panel_config.bits_per_pixel = LCD_BIT_PER_PIXEL;
     panel_config.vendor_config = &vendor_config;
 
-  ESP_LOGI(TAG, "Install panel driver");
+  DECK_LOGI(TAG, "Install panel driver");
   ESP_ERROR_CHECK(esp_lcd_new_panel_axs15231b(panel_io, &panel_config, &panel));
 
   example_lcd_reset();
@@ -323,7 +324,7 @@ void lvgl_port_init(void)
   lv_indev_set_type(touch_indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(touch_indev, TouchInputReadCallback);
 
-  ESP_LOGI(TAG, "Install LVGL tick timer");
+  DECK_LOGI(TAG, "Install LVGL tick timer");
   esp_timer_create_args_t lvgl_tick_timer_args = {};
     lvgl_tick_timer_args.callback = &example_increase_lvgl_tick;
     lvgl_tick_timer_args.name = "lvgl_tick";
