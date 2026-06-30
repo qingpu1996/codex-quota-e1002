@@ -6,6 +6,7 @@ const appConfig = await readFile(new URL("../src/app_config.h", import.meta.url)
 const deckClient = await readFile(new URL("../src/deck_client.cpp", import.meta.url), "utf8");
 const deckUi = await readFile(new URL("../src/ui/deck_ui.c", import.meta.url), "utf8");
 const cjkFont = await readFile(new URL("../src/fonts/codex_deck_cjk_16.c", import.meta.url), "utf8");
+const cjkChars = await readFile(new URL("../src/fonts/codex_deck_cjk_chars.txt", import.meta.url), "utf8");
 const lvConf = await readFile(new URL("../include/lv_conf.h", import.meta.url), "utf8");
 
 function macroNumber(name) {
@@ -94,13 +95,17 @@ test("audio upload path encodes slot id and masks token for logs", () => {
 });
 
 test("stage f firmware contract supports cjk transcript and codex jobs", () => {
+  const requiredCjkChars = "弗斯项检按键逻辑语转确认发给中文回复";
   assert.match(appConfig, /0\.6\.0-stage-f-stt-codex/);
   assert.match(lvConf, /#define\s+LV_FONT_SOURCE_HAN_SANS_SC_16_CJK\s+0/);
   assert.match(lvConf, /LV_FONT_DECLARE\(codex_deck_cjk_16\)/);
   assert.match(deckUi, /return\s+&codex_deck_cjk_16/);
   assert.doesNotMatch(deckUi, /#if\s+CODEX_DECK_CJK_16/);
   assert.match(cjkFont, /0x2000-0x206F/);
-  assert.match(cjkFont, /0x4E00-0x9FA5/);
+  assert.match(cjkFont, /0x4E00-0x9FA5|--symbols/);
+  for (const ch of requiredCjkChars) {
+    assert.match(cjkChars, new RegExp(ch), `deck CJK subset should include ${ch}`);
+  }
   assert.match(deckClient, /copyUtf8Text\(job->screenTranscript/);
   assert.match(deckClient, /deckStartAudioTranscription/);
   assert.match(deckClient, /deckSubmitCodexSend/);
