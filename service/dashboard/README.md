@@ -99,7 +99,7 @@ scripts/uninstall-launchd.sh
 
 `uninstall-launchd.sh` 只卸载 LaunchAgent，不删除配置和缓存。
 
-本轮开发验证可以使用 dev 端口，避免影响正式 19527 LaunchAgent：
+本地开发可以使用 dev 端口，避免影响正式 19527 LaunchAgent：
 
 ```bash
 DECK_DEV_PORT=19600 npm run dev
@@ -255,7 +255,7 @@ Stage F 服务端路径：
 - 固件仍只上传 WAV，不在设备端做 STT。
 - `POST /audio/:audioJobId/transcribe` 创建 `stt_job_<24 hex>`，通过 `/jobs/:jobId` 轮询。
 - 默认自动检测本机 `mlx-whisper`、`mlx_whisper` Python module、`whisper.cpp` 的 `whisper-cli/main`、以及 generic `whisper` CLI。
-- 当前验证过的本机配置是私有 venv 中的 `mlx-whisper-python`。对设备上传的 PCM WAV，adapter 会直接用 Python `wave`/`scipy` 读取、转 mono 16k 后喂给 `mlx_whisper`；如果系统安装了 `ffmpeg`，服务仍会优先用它生成临时 16k mono WAV。
+- `mlx-whisper-python` adapter 会直接用 Python `wave`/`scipy` 读取设备上传的 PCM WAV，转 mono 16k 后喂给 `mlx_whisper`；如果系统安装了 `ffmpeg`，服务会优先用它生成临时 16k mono WAV。
 - 如果没有 provider，STT job 变成 `failed`，`errorMessage` 为 `STT UNAVAILABLE`，服务不崩溃。
 - `POST /codex/send` 创建 `codex_job_<24 hex>`，只在用户确认 transcript 后调用。
 - 同一 slot 继续复用 `activeThreadId`，不同 slot 使用不同 thread。
@@ -281,7 +281,7 @@ STT 私有配置可选文件：
 
 `whisper.cpp` 如果不在标准 PATH 中，需要在 `stt.json` 提供 `modelPath`。当前不会自动安装模型或下载大依赖。
 
-本机已验证的 `mlx-whisper-python` 示例配置：
+使用自建 venv 的 `mlx-whisper-python` 示例配置：
 
 ```json
 {
@@ -383,7 +383,7 @@ GET /api/device/<deviceToken>/weather?slot=3
 - Open-Meteo：不需要 key，覆盖 forecast 和 air quality，适合先跑通。
 - 彩云天气 v2.6：需要 token，服务端调用综合接口，一次拉取实况、小时、天级、空气质量、能见度、云量、附近降水和生活指数等数据。
 
-后续可选：
+可扩展天气源：
 
 - 和风天气 QWeather：大陆天气、分钟降水、生活指数等能力完整，可作为另一套 provider。
 - 高德天气：接入简单，但字段较少，更适合作为轻量 fallback 或地理编码来源。
@@ -407,7 +407,7 @@ GET /api/device/<deviceToken>/weather?slot=3
 
 - 不会请求天气源。
 - 不会请求 `/api/device/<deviceToken>/weather`。
-- 配置页里的天气设置可以保留，后续重新烧录天气模块时继续使用。
+- 配置页里的天气设置可以保留，再次烧录天气模块时继续使用。
 
 ## 食谱图片 API
 
@@ -537,3 +537,5 @@ npm test
 - 天气接口 token 校验、缓存回退和响应脱敏。
 - 配置页 token 校验、模块配置保存和天气连接测试。
 - `Cache-Control: no-store` 和基础响应头。
+- Deck token、slot、job、text debug、audio upload、STT job 和 `/codex/send`。
+- Deck audio helper scripts 的脱敏输出。

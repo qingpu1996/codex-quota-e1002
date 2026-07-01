@@ -1,10 +1,10 @@
 # Codex Device Hub
 
-这是 E1002 常显屏和 Codex Deck 共用的本地局域网设备 hub 项目。Mac 上仍然只有一个 `service/dashboard/` 服务：它从当前用户已经登录的 Codex CLI 会话读取额度和用量，整理成脱敏 JSON；可选模块由 Mac 继续处理食谱、天气等数据源；Deck 侧提供 text-only Codex 派发、raw WAV 上传、本地 STT job、transcript 确认和正式 Codex send 接口。
+这是 E1002 常显屏和 Codex Deck 共用的本地局域网设备 hub 项目。当前 main 包含一个 Mac Node.js 服务、一个 reTerminal E1002 固件和一个 Waveshare Deck 固件。Mac 服务从当前用户已经登录的 Codex CLI 会话读取额度和用量，整理成脱敏 JSON；可选模块由 Mac 继续处理食谱、天气等数据源；Deck 侧提供 text-only Codex 派发、raw WAV 上传、本地 STT job、transcript 确认和正式 Codex send 接口。
 
-reTerminal E1002 继续负责低频常显页面。Waveshare ESP32-S3-Touch-LCD-3.49 后续会负责触控、语音、Codex 槽位选择和任务派发。当前 Waveshare 固件已进入 Stage F：官方 V2 LVGL v9、屏幕、触控、Wi-Fi、Deck Hub `/health`、`/slots`、AP 配置门户、slot 选择、点按式录音、WAV 封装和上传到 Mac、CJK transcript/reply 页面、STT job 和 `/codex/send` 已接入。设备主界面不再显示 `SEND TEST`，text-only debug 只保留为服务端回归 API。TTS、OpenAI API、ChatKit、ChatGPT 网页自动化、实时语音和唤醒词仍不属于当前阶段。
+reTerminal E1002 负责低频常显页面。Waveshare ESP32-S3-Touch-LCD-3.49 负责触控、语音、Codex 槽位选择和任务派发。当前 Waveshare 固件是 Stage F：官方 V2 LVGL v9、屏幕、触控、Wi-Fi、Deck Hub `/health`、`/slots`、AP 配置门户、slot 选择、点按式录音、WAV 封装和上传到 Mac、CJK transcript/reply 页面、STT job 和 `/codex/send` 已接入。设备主界面不再显示 `SEND TEST`，text-only debug 只保留为服务端回归 API。TTS、OpenAI API、ChatKit、ChatGPT 网页自动化、实时语音和唤醒词仍不属于当前阶段。
 
-本仓库是当前正式 monorepo。后续服务端和固件改动都应从这里进入。
+本仓库是当前正式 monorepo。服务端和固件改动都应从这里进入。
 
 ## 目录结构
 
@@ -12,12 +12,10 @@ reTerminal E1002 继续负责低频常显页面。Waveshare ESP32-S3-Touch-LCD-3
 service/dashboard/               macOS Node.js 服务，提供设备 JSON API、食谱图片接口、天气接口、本地配置页和 Deck API
 firmware/e1002/                  PlatformIO Arduino 固件，运行在 reTerminal E1002
 firmware/waveshare-deck-349/     Waveshare Deck Stage F voice transcript + Codex send 固件
-docs/deck/                       Codex Deck 架构、设备协议和 slot 模型文档
+docs/deck/                       Codex Deck 架构、设备协议、slot 模型和 flash 优化记录
 scripts/                         仓库级检查脚本
 .github/workflows/               GitHub Actions CI
 ```
-
-如果本机仍保留旧的独立服务目录或旧固件目录，它们只作为迁移备份，不再作为正式开发入口。
 
 ## 当前架构
 
@@ -26,7 +24,7 @@ Codex CLI 登录状态
   -> codex app-server --stdio
   -> Mac mini 局域网 HTTP 服务
   -> E1002 Wi-Fi 客户端 / Waveshare Deck 客户端
-  -> Seeed_GFX 六色电子纸 / 后续 LVGL 触控界面
+  -> Seeed_GFX 六色电子纸 / LVGL 触控语音界面
 ```
 
 E1002 不运行 HTML、CSS、JavaScript、iframe 或浏览器。Mac 服务也不再提供旧的 HTML dashboard 页面；正式接口只面向设备固件和本机 admin 配置页。
@@ -214,9 +212,11 @@ Waveshare 3.49 存在 V1/V2 硬件差异。实物确认前，不能混用 V1/V2 
 scripts/build.sh
 scripts/flash.sh
 scripts/monitor.sh
+scripts/build.sh waveshare_deck_349_release
+scripts/size-report.sh waveshare_deck_349_release
 ```
 
-Stage F 后必须先确认 CJK 显示、AP 配置门户、Wi-Fi、slot list、触控、点按式录音、WAV 上传、STT provider、TRANSCRIPT 确认、CODEX REPLY 显示，以及服务端 text-only debug API 正常，再进入 TTS、实时语音或唤醒词。
+维护 Stage F 时需要确认 CJK 显示、AP 配置门户、Wi-Fi、slot list、触控、点按式录音、WAV 上传、STT provider、TRANSCRIPT 确认、CODEX REPLY 显示，以及服务端 text-only debug API 正常。TTS、实时语音和唤醒词仍不在当前固件范围内。
 
 Deck API 使用独立 `deckToken`，保存在本机私有目录：
 
@@ -243,6 +243,7 @@ Deck API 使用独立 `deckToken`，保存在本机私有目录：
 docs/deck/ARCHITECTURE.md
 docs/deck/DEVICE_PROTOCOL.md
 docs/deck/SLOT_MODEL.md
+docs/deck/FLASH_OPTIMIZATION_REPORT.md
 ```
 
 ## 按键
@@ -303,6 +304,9 @@ http://<Mac-IP>:19527/admin/<adminToken>/config
 - `firmware/e1002/.pio/`
 - `firmware/e1002/.local/`
 - `firmware/e1002/include/secrets.h`
+- `firmware/waveshare-deck-349/.pio/`
+- `firmware/waveshare-deck-349/.local/`
+- `firmware/waveshare-deck-349/include/secrets.h`
 - Wi-Fi 密码
 - device token
 - admin token
@@ -325,3 +329,12 @@ GitHub Actions 会运行：
 - `firmware/e1002` 的 PlatformIO build。
 - 固件 host tests 的所有 feature 组合。
 - 公开仓库敏感文件检查。
+
+Deck 固件体积和 release build 目前在本地验证：
+
+```bash
+cd firmware/waveshare-deck-349
+scripts/build.sh waveshare_deck_349_release
+scripts/size-report.sh waveshare_deck_349_release
+scripts/test-audio-contract.sh
+```

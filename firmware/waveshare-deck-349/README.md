@@ -78,7 +78,7 @@ Audio I2S mclk=7 bclk=15 ws=46 din=6 dout=45
 - 扬声器播放。
 - E1002 固件或正式 LaunchAgent 改动。
 
-当前已用 Mac 私有 venv 中的 `mlx-whisper-python` 跑通本地 STT。Mac 未检测到可用本地 STT provider 时，小屏会显示 `STT UNAVAILABLE`，这不是固件错误；需要先安装或配置 `mlx-whisper`、`whisper.cpp` 或 generic `whisper`。
+Mac 未检测到可用本地 STT provider 时，小屏会显示 `STT UNAVAILABLE`，这不是固件错误；需要先安装或配置 `mlx-whisper`、`whisper.cpp` 或 generic `whisper`。
 
 ## Files
 
@@ -123,8 +123,6 @@ scripts/size-report.sh
 scripts/generate-cjk-font.sh
 scripts/test-audio-contract.sh
 ```
-
-`include/secrets.h` 已不再参与 Stage F 固件配置；如果本地还存在，它仍保持 ignored，只是上一阶段遗留文件。
 
 ## CJK Font
 
@@ -182,7 +180,7 @@ URL: http://192.168.4.1
 ```text
 Wi-Fi SSID
 Wi-Fi Password
-Deck Hub Base URL, e.g. http://192.168.5.156:19600
+Deck Hub Base URL, e.g. http://<Mac-LAN-IP>:19527
 Deck Token, 64 hex chars
 ```
 
@@ -249,11 +247,7 @@ cd firmware/waveshare-deck-349
 scripts/flash.sh
 ```
 
-当前实测串口：
-
-```text
-/dev/cu.usbmodem21101
-```
+脚本会自动探测唯一的 USB 串口；如果没有串口或存在多个候选串口，会停止并要求显式处理。
 
 ## Monitor
 
@@ -319,24 +313,24 @@ POST /api/deck/<deckToken>/audio/:audioJobId/transcribe
 POST /api/deck/<deckToken>/codex/send
 ```
 
-临时测试服务：
+开发测试服务：
 
 ```bash
 cd service/dashboard
-DECK_DEV_HOST=192.168.5.156 DECK_DEV_PORT=19600 npm run dev
+DECK_DEV_HOST=0.0.0.0 DECK_DEV_PORT=19600 npm run dev
 ```
 
-这只用于开发测试，不安装或修改正式 LaunchAgent。
+这只用于开发测试，不安装或修改正式 LaunchAgent。设备配置里填写 `http://<Mac-LAN-IP>:19600`。
 
 ## Confirmation Gate
 
-Stage F flash 后确认：
+Stage F 烧录后确认：
 
 - C1 屏幕显示 `SETUP AP`、`CodexDeck-Setup`、`192.168.4.1`。
 - C2 Mac 可以连接 `CodexDeck-Setup`。
 - C3 浏览器打开 `http://192.168.4.1` 能看到配置表单。
 - C4 保存配置后设备重启。
-- C5 启动临时 Deck Hub 后，屏幕显示 5 个 slot。
+- C5 启动 Deck Hub 后，屏幕显示 5 个 slot。
 - C6 串口出现 `deck slots updated count=5`。
 - D1 点击任意 slot 后屏幕底部显示 `SEL <slot title>`。
 - D2 主界面不再显示 `SEND TEST`。
@@ -355,22 +349,8 @@ Stage F flash 后确认：
 - F6 点击 `SEND` 后显示 `CODEX RUNNING`，完成后显示 `CODEX REPLY`。
 - F7 `/debug/text` 仍可用于服务端 text-only debug 回归，但不再出现在设备主界面。
 
-已确认：
+当前已知限制：本地 STT 准确率取决于 Mac 上配置的 provider 和模型；中文仍可能出现少量同音误差。TTS、实时语音和唤醒词仍未实现。
 
-- 真机屏幕显示 `AUDIO RECEIVED`。
-- Mac 侧已保存 `audio_job_fd5b2721ae71b01db04520d3.wav/json`。
-- 保存的 WAV 被 macOS 识别为 PCM / 24kHz / 16-bit / stereo，时长约 2.005s。
-- `deck-audio-play.sh` 可正常调用系统播放器。
-
-当前已知限制：Mac 私有 `stt.json` 已切到 `small`，中文准确率明显好于 `base`，但仍可能出现少量同音误差。TTS、实时语音和唤醒词仍未实现。
-
-## Rollback
-
-回滚 Stage F 固件改动：
-
-```bash
-git restore --staged firmware/waveshare-deck-349
-git restore firmware/waveshare-deck-349
-```
+## Restore Official Example
 
 如果设备需要回到官方示例，可直接在官方 V2 仓库重新烧录 `Arduino/examples/10_LVGL_V9_Test`。如果实物确认是 V1，改用官方 V1 示例包。

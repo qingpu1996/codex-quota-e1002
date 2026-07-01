@@ -2,7 +2,7 @@
 
 这是 Seeed Studio reTerminal E1002 的自定义 Arduino/PlatformIO 固件。设备从 Mac 局域网服务获取 Codex 额度 JSON，以及可选模块需要的食谱图片、天气 JSON，用 Seeed_GFX 直接绘制到 800 x 480 六色电子纸，然后进入 deep sleep。
 
-固件不运行 HTML、CSS、JavaScript、iframe 或浏览器。唯一的 HTML 是设备本地 SoftAP 配网页面，用于输入 Wi-Fi 和 Mac API URL。
+固件不运行 HTML、CSS、JavaScript、iframe 或浏览器，也不调用 Deck 的 slot、audio、STT 或 Codex send API。唯一的 HTML 是设备本地 SoftAP 配网页面，用于输入 Wi-Fi 和 Mac API URL。
 
 ## 硬件和平台
 
@@ -57,7 +57,7 @@ scripts/install.sh
 [x] Codex quota dashboard
 [x] Wi-Fi setup portal
 [x] Deep sleep and three-button navigation
-[ ] Daily meal page
+[x] Daily meal page
 [ ] Weather page
 ```
 
@@ -80,11 +80,12 @@ Mac 配置页会显示建议的 `FEATURE_MEAL` 和 `FEATURE_WEATHER`，但不会
 ## 构建和测试
 
 ```bash
-test/run_host_tests.sh
 scripts/build.sh
+test/run_host_tests.sh
+scripts/build.sh --clean
 ```
 
-`test/run_host_tests.sh` 运行不依赖硬件的 C++ host tests。
+`test/run_host_tests.sh` 运行不依赖硬件的 C++ host tests，并覆盖 `FEATURE_MEAL` / `FEATURE_WEATHER` 的四种组合。它需要先通过 `scripts/build.sh` 准备 PlatformIO 依赖。`scripts/build.sh --clean` 用于 feature 组合切换后强制清理 PlatformIO env。
 
 也可以直接临时覆盖 feature：
 
@@ -262,6 +263,8 @@ GET http://<Mac-IP>:19527/api/device/<deviceToken>/weather?slot=N
 ```
 
 这些请求只会在对应 feature 启用且当前页面需要数据时发生。
+
+E1002 只使用 `/api/device/<deviceToken>` 下的设备接口；`/api/deck/<deckToken>` 是 Waveshare Deck 专用接口。
 
 `meal/today.raw` 必须返回：
 
